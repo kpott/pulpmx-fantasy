@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>47996546-cac2-460b-b0d3-e73335c9180d</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.1">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PulpMXFantasy.Application\PulpMXFantasy.Application.csproj" />
+    <ProjectReference Include="..\PulpMXFantasy.Infrastructure\PulpMXFantasy.Infrastructure.csproj" />
+    <ProjectReference Include="..\PulpMXFantasy.Contracts\PulpMXFantasy.Contracts.csproj" />
+    <ProjectReference Include="..\PulpMXFantasy.ReadModel\PulpMXFantasy.ReadModel.csproj" />
+    <ProjectReference Include="..\PulpMXFantasy.Messaging\PulpMXFantasy.Messaging.csproj" />
+  </ItemGroup>
+
+</Project>

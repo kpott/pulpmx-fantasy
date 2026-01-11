@@ -1,0 +1,58 @@
+# Security - NEVER commit secrets
+.env
+secrets.json
+appsettings.*.json
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio / Rider
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.swp
+*~
+
+# .NET User Secrets
+**/Properties/launchSettings.json
+
+# ML.NET trained models (can be large)
+**/TrainedModels/
+
+# Vendor libraries (restore via LibMan or CDN)
+**/wwwroot/lib/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Test coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Docker
+docker/postgres/data/
+.dockerignore
+
+# Database backups
+backups/*.sql

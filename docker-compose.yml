@@ -1,0 +1,268 @@
+version: '3.8'
+
+# Docker Compose configuration for PulpMX Fantasy development environment
+#
+# WHY DOCKER COMPOSE?
+# ===================
+# 1. Consistent development environment across all machines
+# 2. Easy PostgreSQL setup (no manual installation needed)
+# 3. Matches production environment (same PostgreSQL version)
+# 4. Quick teardown and rebuild for testing
+# 5. Volume persistence keeps data between restarts
+#
+# USAGE:
+# ======
+# Start services:    docker-compose up -d
+# Stop services:     docker-compose down
+# View logs:         docker-compose logs -f
+# Rebuild:           docker-compose up -d --build
+# Remove volumes:    docker-compose down -v (WARNING: deletes data!)
+#
+# ACCESSING POSTGRESQL:
+# =====================
+# From host machine:
+#   Host: localhost
+#   Port: 5432
+#   Database: pulpmx_fantasy
+#   Username: postgres
+#   Password: postgres
+#
+# Connection string:
+#   Host=localhost;Port=5432;Database=pulpmx_fantasy;Username=postgres;Password=postgres
+#
+# Using psql command line:
+#   docker-compose exec postgres psql -U postgres -d pulpmx_fantasy
+#
+# ACCESSING RABBITMQ:
+# ===================
+# From host machine:
+#   AMQP: localhost:5672
+#   Management UI: http://localhost:15672
+#   Username: admin
+#   Password: admin
+#
+# Connection string:
+#   amqp://admin:admin@localhost:5672
+#
+# SECURITY NOTE:
+# ==============
+# This uses simple credentials (postgres/postgres) for LOCAL DEVELOPMENT ONLY.
+# Production deployments use:
+# - Strong passwords from Azure Key Vault
+# - Managed PostgreSQL (Azure Database for PostgreSQL)
+# - Network isolation and encryption
+
+services:
+  # PostgreSQL 16 database service
+  postgres:
+    image: postgres:16-alpine
+    container_name: pulpmx-postgres
+    restart: unless-stopped
+
+    # Environment variables configure PostgreSQL
+    # These are read from .env file if present, or use defaults
+    environment:
+      # Superuser credentials
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      # Default database to create on first start
+      POSTGRES_DB: ${POSTGRES_DB}
+
+      # PostgreSQL configuration
+      # Use UTC timezone to match application DateTime.UtcNow
+      TZ: UTC
+      PGTZ: UTC
+
+    # Port mapping: host:container
+    # Maps container port 5432 to host port 5432
+    # Allows applications on host to connect to localhost:5432
+    ports:
+      - "5432:5432"
+
+    # Volume for persistent data storage
+    # Data survives container restarts and recreations
+    # Only deleted with `docker-compose down -v`
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+      # Optional: Mount initialization scripts
+      # Place .sql files in ./docker/postgres/ to run on first startup
+      # Example: seed data, create users, configure extensions
+      # - ./docker/postgres:/docker-entrypoint-initdb.d
+
+    # Health check ensures database is ready before dependent services start
+    # Useful when adding web service to docker-compose later
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pulpmx_fantasy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    # Resource limits (optional - adjust based on your machine)
+    # Prevents PostgreSQL from consuming all system resources
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    # Network configuration
+    # Creates isolated network for services to communicate
+    networks:
+      - pulpmx-network
+
+  # RabbitMQ message broker for CQRS event bus
+  # Used by MassTransit for command/event messaging
+  rabbitmq:
+    image: rabbitmq:4.2.2-management-alpine
+    container_name: pulpmx-rabbitmq
+    restart: unless-stopped
+
+    # Environment variables for RabbitMQ configuration
+    environment:
+      # Default credentials (local development only)
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+
+      # Default virtual host
+      RABBITMQ_DEFAULT_VHOST: /
+
+    # Port mapping:
+    # - 5672: AMQP protocol (application connections)
+    # - 15672: Management UI (http://localhost:15672)
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+    # Volume for persistent message storage
+    # Queues and messages survive container restarts
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+    # Health check ensures RabbitMQ is ready before dependent services start
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+    # Network configuration
+    networks:
+      - pulpmx-network
+
+  # ASP.NET MVC Web Application
+  # Sends commands to Worker via RabbitMQ
+  web:
+    build:
+      context: .
+      dockerfile: src/PulpMXFantasy.Web/Dockerfile
+    container_name: pulpmx-web
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Username: admin
+      RabbitMQ__Password: admin
+      PulpMXApi__ApiToken: ${PULPMX_API_TOKEN:-}
+      MLNet__ModelDirectory: /app/TrainedModels
+    ports:
+      - "8080:8080"
+    volumes:
+      - trained_models:/app/TrainedModels
+    networks:
+      - pulpmx-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  # MassTransit Worker Service
+  # Processes commands from RabbitMQ queues
+  worker:
+    build:
+      context: .
+      dockerfile: src/PulpMXFantasy.Worker/Dockerfile
+    container_name: pulpmx-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__Username: admin
+      RabbitMQ__Password: admin
+      PulpMXApi__ApiToken: ${PULPMX_API_TOKEN}
+      MLNet__ModelDirectory: /app/TrainedModels
+    volumes:
+      - trained_models:/app/TrainedModels
+    networks:
+      - pulpmx-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+
+# Named volumes for data persistence
+volumes:
+  postgres_data:
+    driver: local
+    # Volume is stored in Docker's managed location
+    # Linux: /var/lib/docker/volumes/
+    # Mac: ~/Library/Containers/com.docker.docker/Data/
+    # Windows: C:\ProgramData\DockerDesktop\
+
+  rabbitmq_data:
+    driver: local
+    # RabbitMQ message persistence
+
+  trained_models:
+    driver: local
+    # Shared ML model storage between web and worker
+
+# Named networks for service communication
+networks:
+  pulpmx-network:
+    driver: bridge
+    # Bridge network allows containers to communicate via service names
+    # Example: Web service can connect to postgres:5432 or rabbitmq:5672
+
+# OPTIONAL ADDITIONS:
+# ===================
+# pgadmin:
+#   image: dpage/pgadmin4:latest
+#   environment:
+#     PGADMIN_DEFAULT_EMAIL: admin@pulpmx.local
+#     PGADMIN_DEFAULT_PASSWORD: admin
+#   ports:
+#     - "5050:80"
+#   networks:
+#     - pulpmx-network
