@@ -18,6 +18,11 @@ public class PredictionsViewModel
     public EventReadModel? Event { get; set; }
 
     /// <summary>
+    /// All events that have predictions (for event selector dropdown).
+    /// </summary>
+    public IReadOnlyList<EventReadModel> AllEvents { get; set; } = Array.Empty<EventReadModel>();
+
+    /// <summary>
     /// Predictions from read model (denormalized with rider data).
     /// </summary>
     public IReadOnlyList<EventPredictionReadModel> Predictions { get; set; } = Array.Empty<EventPredictionReadModel>();

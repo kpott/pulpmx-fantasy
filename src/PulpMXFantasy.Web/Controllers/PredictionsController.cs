@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using PulpMXFantasy.Contracts.ReadModels;
 using PulpMXFantasy.ReadModel;
 using PulpMXFantasy.Web.Models;
 
@@ -35,6 +36,9 @@ public class PredictionsController : Controller
     {
         try
         {
+            // Load all events that have predictions (for dropdown)
+            var allEvents = await GetEventsWithPredictionsAsync();
+
             // Find next upcoming event from read model
             var nextEvent = await _readDbContext.Events
                 .AsNoTracking()
@@ -42,10 +46,13 @@ public class PredictionsController : Controller
                 .OrderBy(e => e.EventDate)
                 .FirstOrDefaultAsync();
 
+            // If no upcoming event, default to most recent event with predictions
+            nextEvent ??= allEvents.FirstOrDefault();
+
             if (nextEvent == null)
             {
-                ViewBag.Message = "No upcoming events found. Events will appear after syncing from the Admin panel.";
-                return View(new PredictionsViewModel());
+                ViewBag.Message = "No events found. Events will appear after syncing from the Admin panel.";
+                return View(new PredictionsViewModel { AllEvents = allEvents });
             }
 
             // Query predictions from read model (no ML inference - just DB query)
@@ -62,6 +69,7 @@ public class PredictionsController : Controller
             var model = new PredictionsViewModel
             {
                 Event = nextEvent,
+                AllEvents = allEvents,
                 Predictions = predictions
             };
 
@@ -83,6 +91,9 @@ public class PredictionsController : Controller
     {
         try
         {
+            // Load all events that have predictions (for dropdown)
+            var allEvents = await GetEventsWithPredictionsAsync();
+
             // Load event from read model
             var eventEntity = await _readDbContext.Events
                 .AsNoTracking()
@@ -107,6 +118,7 @@ public class PredictionsController : Controller
             var model = new PredictionsViewModel
             {
                 Event = eventEntity,
+                AllEvents = allEvents,
                 Predictions = predictions
             };
 
@@ -117,5 +129,23 @@ public class PredictionsController : Controller
             _logger.LogError(ex, "Error loading predictions for event {EventId}", eventId);
             return RedirectToAction("Index");
         }
+    }
+
+    /// <summary>
+    /// Get all events that have predictions, ordered by date descending (most recent first).
+    /// </summary>
+    private async Task<IReadOnlyList<EventReadModel>> GetEventsWithPredictionsAsync()
+    {
+        var eventIdsWithPredictions = await _readDbContext.EventPredictions
+            .AsNoTracking()
+            .Select(p => p.EventId)
+            .Distinct()
+            .ToListAsync();
+
+        return await _readDbContext.Events
+            .AsNoTracking()
+            .Where(e => eventIdsWithPredictions.Contains(e.Id))
+            .OrderByDescending(e => e.EventDate)
+            .ToListAsync();
     }
 }

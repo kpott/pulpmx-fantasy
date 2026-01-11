@@ -20,6 +20,23 @@
         </div>
     }
 
+    @if (Model.AllEvents.Any())
+    {
+        <div class="mb-4">
+            <label for="eventSelector" class="form-label"><strong>Select Event:</strong></label>
+            <select id="eventSelector" class="form-select" style="max-width: 400px;" onchange="if(this.value) window.location.href=this.value">
+                @foreach (var evt in Model.AllEvents)
+                {
+                    var url = Url.Action("Event", "Predictions", new { eventId = evt.Id });
+                    var isSelected = Model.Event?.Id == evt.Id;
+                    var statusLabel = evt.IsCompleted ? " (Completed)" :
+                                      evt.EventDate < DateTimeOffset.UtcNow ? " (In Progress)" : "";
+                    <option value="@url" selected="@isSelected">@evt.Name - @evt.EventDate.ToString("MMM dd, yyyy")@statusLabel</option>
+                }
+            </select>
+        </div>
+    }
+
     @if (Model.Event != null)
     {
         <div class="card mb-4">
@@ -29,7 +46,6 @@
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-8">
-                        <p class="mb-1"><strong>Venue:</strong> @Model.Event.Venue, @Model.Event.Location</p>
                         <p class="mb-1"><strong>Date:</strong> @Model.Event.EventDate.ToString("MMMM dd, yyyy")</p>
                         <p class="mb-1"><strong>Series:</strong> @Model.Event.SeriesName (@Model.Event.SeasonYear)</p>
                     </div>

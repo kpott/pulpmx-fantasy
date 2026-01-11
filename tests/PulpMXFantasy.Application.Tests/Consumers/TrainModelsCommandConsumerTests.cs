@@ -403,7 +403,8 @@ public class TrainModelsCommandConsumerTests
 
         _mockPublishEndpoint.Publish(
             Arg.Do<ModelsTrainedEvent>(e => publishedEvent = e),
-            Arg.Any<CancellationToken>());
+            Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
 
         var handler = CreateHandler();
 
