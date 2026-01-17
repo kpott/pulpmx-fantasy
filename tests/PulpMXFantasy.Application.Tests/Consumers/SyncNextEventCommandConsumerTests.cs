@@ -50,7 +50,7 @@ public class SyncNextEventCommandConsumerTests
     public async Task Consume_CallsEventSyncServiceToSyncNextEvent()
     {
         // Arrange
-        var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
+        var command = new SyncNextEventCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         _consumeContext.Message.Returns(command);
         _consumeContext.MessageId.Returns(Guid.NewGuid());
         _consumeContext.CorrelationId.Returns(Guid.NewGuid());
@@ -69,7 +69,7 @@ public class SyncNextEventCommandConsumerTests
     public async Task Consume_PublishesCommandStartedEvent()
     {
         // Arrange
-        var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
+        var command = new SyncNextEventCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var messageId = Guid.NewGuid();
         var correlationId = Guid.NewGuid();
 
@@ -95,7 +95,7 @@ public class SyncNextEventCommandConsumerTests
     public async Task Consume_PublishesProgressUpdateEvent()
     {
         // Arrange
-        var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
+        var command = new SyncNextEventCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         _consumeContext.Message.Returns(command);
         _consumeContext.MessageId.Returns(Guid.NewGuid());
         _consumeContext.CorrelationId.Returns(Guid.NewGuid());
@@ -116,7 +116,7 @@ public class SyncNextEventCommandConsumerTests
     public async Task Consume_PublishesEventSyncedEventOnSuccess()
     {
         // Arrange
-        var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
+        var command = new SyncNextEventCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         _consumeContext.Message.Returns(command);
         _consumeContext.MessageId.Returns(Guid.NewGuid());
         _consumeContext.CorrelationId.Returns(Guid.NewGuid());
@@ -137,7 +137,7 @@ public class SyncNextEventCommandConsumerTests
     public async Task Consume_PublishesCommandCompletedEventOnSuccess()
     {
         // Arrange
-        var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
+        var command = new SyncNextEventCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var messageId = Guid.NewGuid();
         _consumeContext.Message.Returns(command);
         _consumeContext.MessageId.Returns(messageId);
@@ -159,7 +159,7 @@ public class SyncNextEventCommandConsumerTests
     public async Task Consume_DoesNotPublishEventSyncedWhenSyncReturnsFalse()
     {
         // Arrange
-        var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
+        var command = new SyncNextEventCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         _consumeContext.Message.Returns(command);
         _consumeContext.MessageId.Returns(Guid.NewGuid());
         _consumeContext.CorrelationId.Returns(Guid.NewGuid());
@@ -186,7 +186,7 @@ public class SyncNextEventCommandConsumerTests
     public async Task Consume_PublishesCommandFailedEventOnException()
     {
         // Arrange
-        var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
+        var command = new SyncNextEventCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var messageId = Guid.NewGuid();
         var correlationId = Guid.NewGuid();
 
@@ -213,7 +213,7 @@ public class SyncNextEventCommandConsumerTests
     public async Task Consume_DoesNotPublishEventSyncedOnError()
     {
         // Arrange
-        var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
+        var command = new SyncNextEventCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         _consumeContext.Message.Returns(command);
         _consumeContext.MessageId.Returns(Guid.NewGuid());
         _consumeContext.CorrelationId.Returns(Guid.NewGuid());

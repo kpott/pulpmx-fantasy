@@ -77,3 +77,48 @@ The project enforces CQRS boundaries at the **assembly level** to prevent accide
 3. Add DbSet to `ReadDbContext`
 4. Update `IReadModelUpdater` interface and implementation
 5. Have Worker populate the read model when relevant events occur
+
+### Exception Handling Strategy
+
+The project uses a deliberate exception handling strategy to provide user feedback via SignalR while allowing MassTransit retries for transient failures.
+
+**Command Consumers (TrainModels, SyncNextEvent, ImportEvents):**
+- Catch **transient exceptions** (network, timeout) and **RETHROW** to trigger MassTransit retry
+- Catch **non-transient exceptions**, publish `CommandFailedEvent`, do **NOT** rethrow
+- Rationale: Transient failures should retry automatically; permanent failures notify users immediately
+
+**Transient Exceptions (rethrow for retry):**
+- `HttpRequestException` with status 429 (Too Many Requests), 502, 503, 504
+- `TaskCanceledException` caused by timeout
+- Database connection failures
+
+**Non-Transient Exceptions (publish failure, don't rethrow):**
+- Validation errors
+- Business logic failures
+- Not found errors
+- Unknown/unexpected exceptions (fail fast, notify user)
+
+**Event Consumers (ModelsTrainedEvent):**
+- Log errors and continue (fire-and-forget semantics)
+- Return empty collections on failure
+- Do NOT rethrow - events are eventually consistent
+
+**Pattern for Command Consumers:**
+```csharp
+try
+{
+    // Command processing
+    await context.Publish(new CommandCompletedEvent(...));
+}
+catch (HttpRequestException ex) when (IsTransient(ex))
+{
+    _logger.LogWarning(ex, "Transient failure, will retry");
+    throw; // Rethrow for MassTransit retry
+}
+catch (Exception ex)
+{
+    _logger.LogError(ex, "Permanent failure");
+    await context.Publish(new CommandFailedEvent(...));
+    // Do NOT rethrow
+}
+```

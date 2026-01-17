@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PulpMXFantasy.Domain.Abstractions;
 using PulpMXFantasy.Domain.Entities;
 
 namespace PulpMXFantasy.Infrastructure.Data;
@@ -190,18 +191,13 @@ public class ApplicationDbContext : DbContext
     /// </remarks>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        // Update UpdatedAt timestamp for all modified entities
-        var entries = ChangeTracker.Entries()
+        // Update UpdatedAt timestamp for all modified entities that implement IHasTimestamps
+        var entries = ChangeTracker.Entries<IHasTimestamps>()
             .Where(e => e.State == EntityState.Modified);
 
         foreach (var entry in entries)
         {
-            // Check if entity has UpdatedAt property using reflection
-            var updatedAtProperty = entry.Entity.GetType().GetProperty("UpdatedAt");
-            if (updatedAtProperty != null && updatedAtProperty.PropertyType == typeof(DateTimeOffset))
-            {
-                updatedAtProperty.SetValue(entry.Entity, DateTimeOffset.UtcNow);
-            }
+            entry.Entity.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         return base.SaveChangesAsync(cancellationToken);

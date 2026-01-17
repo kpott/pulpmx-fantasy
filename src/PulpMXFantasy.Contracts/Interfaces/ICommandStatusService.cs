@@ -44,14 +44,14 @@ public interface ICommandStatusService
     /// <summary>
     /// Gets all command statuses by correlation ID.
     /// </summary>
-    Task<List<CommandStatusReadModel>> GetByCorrelationIdAsync(
+    Task<IReadOnlyList<CommandStatusReadModel>> GetByCorrelationIdAsync(
         Guid correlationId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets recent command statuses.
     /// </summary>
-    Task<List<CommandStatusReadModel>> GetRecentAsync(
+    Task<IReadOnlyList<CommandStatusReadModel>> GetRecentAsync(
         int count = 20,
         string? commandType = null,
         CancellationToken cancellationToken = default);

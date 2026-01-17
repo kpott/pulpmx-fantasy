@@ -11,7 +11,7 @@ namespace PulpMXFantasy.Contracts.Events;
 /// <param name="TotalTrainingSamples">Total number of samples used across all models</param>
 public record ModelsTrainedEvent(
     DateTimeOffset TrainedAt,
-    List<ModelMetadata> Models,
+    IReadOnlyList<ModelMetadata> Models,
     int TotalTrainingSamples);
 
 /// <summary>

@@ -105,12 +105,20 @@
                                 @foreach (var prediction in classGroup)
                                 {
                                     var rankClass = rank <= 3 ? "top-3" : "";
-                                    <tr>
+                                    var rowClass = prediction.Ineligible ? "rider-ineligible" : "";
+                                    <tr class="@rowClass">
                                         <td>
                                             <span class="prediction-rank @rankClass">@rank</span>
                                         </td>
                                         <td>
-                                            <strong>@prediction.RiderName</strong>
+                                            <span class="@(prediction.Ineligible ? "rider-name" : "")"><strong>@prediction.RiderName</strong></span>
+                                            @if (prediction.Ineligible)
+                                            {
+                                                var tooltip = !string.IsNullOrEmpty(prediction.IneligibleReason)
+                                                    ? prediction.IneligibleReason
+                                                    : "Ineligible";
+                                                <span class="ineligible-badge ms-2" data-tooltip="@tooltip">Ineligible</span>
+                                            }
                                         </td>
                                         <td>@prediction.RiderNumber</td>
                                         <td>

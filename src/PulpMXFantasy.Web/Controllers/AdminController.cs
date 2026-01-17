@@ -85,6 +85,7 @@ public class AdminController : Controller
         _logger.LogInformation("Sending SyncNextEventCommand {CommandId}", commandId);
 
         var command = new SyncNextEventCommand(
+            CommandId: commandId,
             Timestamp: DateTimeOffset.UtcNow
         );
 
@@ -109,9 +110,11 @@ public class AdminController : Controller
             return RedirectToAction("Index");
         }
 
-        _logger.LogInformation("Sending ImportEventsCommand for slug: {EventSlug}", eventSlug);
+        var commandId = Guid.NewGuid();
+        _logger.LogInformation("Sending ImportEventsCommand {CommandId} for slug: {EventSlug}", commandId, eventSlug);
 
         var command = new ImportEventsCommand(
+            CommandId: commandId,
             EventSlugs: [eventSlug.Trim()],
             Timestamp: DateTimeOffset.UtcNow
         );
@@ -147,12 +150,15 @@ public class AdminController : Controller
             return RedirectToAction("Index");
         }
 
+        var commandId = Guid.NewGuid();
         _logger.LogInformation(
-            "Sending ImportEventsCommand for season {Season} ({Count} events)",
+            "Sending ImportEventsCommand {CommandId} for season {Season} ({Count} events)",
+            commandId,
             season,
             eventSlugs.Count);
 
         var command = new ImportEventsCommand(
+            CommandId: commandId,
             EventSlugs: eventSlugs,
             Timestamp: DateTimeOffset.UtcNow
         );
@@ -192,11 +198,14 @@ public class AdminController : Controller
             return RedirectToAction("Index");
         }
 
+        var commandId = Guid.NewGuid();
         _logger.LogInformation(
-            "Sending ImportEventsCommand for {Count} custom events",
+            "Sending ImportEventsCommand {CommandId} for {Count} custom events",
+            commandId,
             slugList.Count);
 
         var command = new ImportEventsCommand(
+            CommandId: commandId,
             EventSlugs: slugList,
             Timestamp: DateTimeOffset.UtcNow
         );
@@ -218,9 +227,11 @@ public class AdminController : Controller
     [HttpPost]
     public async Task<IActionResult> TrainModels()
     {
-        _logger.LogInformation("Sending TrainModelsCommand");
+        var commandId = Guid.NewGuid();
+        _logger.LogInformation("Sending TrainModelsCommand {CommandId}", commandId);
 
         var command = new TrainModelsCommand(
+            CommandId: commandId,
             Timestamp: DateTimeOffset.UtcNow,
             Force: false
         );

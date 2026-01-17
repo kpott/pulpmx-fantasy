@@ -416,7 +416,9 @@ public class EventSyncService : IEventSyncService
             QualyGapToLeader = null, // Not provided in this endpoint
             FinishPosition = finishPosition,
             HandicapAdjustedPosition = handicapPosition,
-            FantasyPoints = detailed.FantasyPoints
+            FantasyPoints = detailed.FantasyPoints,
+            Ineligible = detailed.Ineligible,
+            IneligibleReason = detailed.IneligibleReason
         };
     }
 

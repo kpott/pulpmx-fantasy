@@ -1,3 +1,5 @@
+using PulpMXFantasy.Domain.Abstractions;
+
 namespace PulpMXFantasy.Domain.Entities;
 
 /// <summary>
@@ -21,7 +23,7 @@ namespace PulpMXFantasy.Domain.Entities;
 /// - Primary key: Id (UUID)
 /// - Unique constraint on PulpMxId (external API reference)
 /// </remarks>
-public class Rider
+public class Rider : IHasTimestamps
 {
     /// <summary>
     /// Internal unique identifier for the rider

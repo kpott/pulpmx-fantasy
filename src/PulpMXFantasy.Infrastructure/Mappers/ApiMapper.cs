@@ -156,6 +156,8 @@ public static class ApiMapper
             FinishPosition = apiRider.FinishPosition,
             HandicapAdjustedPosition = apiRider.HandicapAdjustedPosition,
             FantasyPoints = apiRider.FantasyPoints,
+            Ineligible = apiRider.Ineligible,
+            IneligibleReason = apiRider.IneligibleReason,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
@@ -187,6 +189,8 @@ public static class ApiMapper
         eventRider.FinishPosition = apiRider.FinishPosition;
         eventRider.HandicapAdjustedPosition = apiRider.HandicapAdjustedPosition;
         eventRider.FantasyPoints = apiRider.FantasyPoints;
+        eventRider.Ineligible = apiRider.Ineligible;
+        eventRider.IneligibleReason = apiRider.IneligibleReason;
         eventRider.UpdatedAt = DateTimeOffset.UtcNow;
     }
 

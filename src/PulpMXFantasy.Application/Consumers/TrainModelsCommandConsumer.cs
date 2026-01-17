@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text.Json;
 using MassTransit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -7,7 +9,6 @@ using PulpMXFantasy.Contracts.Events;
 using PulpMXFantasy.Contracts.ReadModels;
 using PulpMXFantasy.Domain.Abstractions;
 using PulpMXFantasy.Domain.Enums;
-using System.Text.Json;
 
 namespace PulpMXFantasy.Application.Consumers;
 
@@ -240,13 +241,31 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
                 "TrainModelsCommand completed successfully: CommandId={CommandId}, ModelsCount={ModelsCount}",
                 commandId, trainedModels.Count);
         }
+        catch (HttpRequestException ex) when (IsTransient(ex))
+        {
+            _logger.LogWarning(ex,
+                "Transient HTTP failure during training, will retry: CommandId={CommandId}, StatusCode={StatusCode}",
+                commandId, ex.StatusCode);
+
+            // Rethrow to trigger MassTransit retry
+            throw;
+        }
+        catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            _logger.LogWarning(ex,
+                "Timeout during training, will retry: CommandId={CommandId}",
+                commandId);
+
+            // Rethrow to trigger MassTransit retry
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex,
                 "TrainModelsCommand failed: CommandId={CommandId}, Error={Error}",
                 commandId, ex.Message);
 
-            // Publish CommandFailedEvent - do NOT rethrow to prevent MassTransit retry
+            // Publish CommandFailedEvent - do NOT rethrow for non-transient errors
             await context.Publish(new CommandFailedEvent(
                 commandId,
                 DateTimeOffset.UtcNow,
@@ -254,6 +273,15 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
                 ex.GetType().Name), cancellationToken);
         }
     }
+
+    /// <summary>
+    /// Determines if an HTTP exception is transient and should be retried.
+    /// </summary>
+    private static bool IsTransient(HttpRequestException ex) =>
+        ex.StatusCode is HttpStatusCode.TooManyRequests // 429
+            or HttpStatusCode.ServiceUnavailable // 503
+            or HttpStatusCode.BadGateway // 502
+            or HttpStatusCode.GatewayTimeout; // 504
 
     /// <summary>
     /// Persists model metadata to the read model database.

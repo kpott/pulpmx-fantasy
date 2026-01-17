@@ -68,7 +68,7 @@ public class TrainModelsCommandConsumerTests
     public async Task Consume_TrainsAllFourModels_WhenCommandReceived()
     {
         // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+        var command = new TrainModelsCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var correlationId = Guid.NewGuid();
 
         _mockConsumeContext.Message.Returns(command);
@@ -111,7 +111,7 @@ public class TrainModelsCommandConsumerTests
     public async Task Consume_PublishesCommandStartedEvent_AtStart()
     {
         // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+        var command = new TrainModelsCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var correlationId = Guid.NewGuid();
         var commandId = Guid.NewGuid();
 
@@ -142,7 +142,7 @@ public class TrainModelsCommandConsumerTests
     public async Task Consume_PublishesProgressEventsBetweenEachModelTraining()
     {
         // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+        var command = new TrainModelsCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var correlationId = Guid.NewGuid();
         var commandId = Guid.NewGuid();
 
@@ -182,7 +182,7 @@ public class TrainModelsCommandConsumerTests
     public async Task Consume_PersistsModelMetadataToReadModel_ForEachTrainedModel()
     {
         // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+        var command = new TrainModelsCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var correlationId = Guid.NewGuid();
 
         _mockConsumeContext.Message.Returns(command);
@@ -209,7 +209,7 @@ public class TrainModelsCommandConsumerTests
     public async Task Consume_PublishesModelsTrainedEvent_OnSuccessfulCompletion()
     {
         // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+        var command = new TrainModelsCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var correlationId = Guid.NewGuid();
 
         _mockConsumeContext.Message.Returns(command);
@@ -238,7 +238,7 @@ public class TrainModelsCommandConsumerTests
     public async Task Consume_PublishesCommandFailedEvent_WhenTrainingThrowsException()
     {
         // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+        var command = new TrainModelsCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var correlationId = Guid.NewGuid();
         var commandId = Guid.NewGuid();
 
@@ -273,7 +273,7 @@ public class TrainModelsCommandConsumerTests
     public async Task Consume_RetrainsAllModels_WhenForceIsTrue()
     {
         // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow, Force: true);
+        var command = new TrainModelsCommand(Guid.NewGuid(), DateTimeOffset.UtcNow, Force: true);
         var correlationId = Guid.NewGuid();
 
         _mockConsumeContext.Message.Returns(command);
@@ -305,7 +305,7 @@ public class TrainModelsCommandConsumerTests
     public async Task Consume_PublishesCommandCompletedEvent_OnSuccess()
     {
         // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+        var command = new TrainModelsCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var correlationId = Guid.NewGuid();
         var commandId = Guid.NewGuid();
 
@@ -333,7 +333,7 @@ public class TrainModelsCommandConsumerTests
     public async Task Consume_TrainsModelsSequentially_InCorrectOrder()
     {
         // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+        var command = new TrainModelsCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var correlationId = Guid.NewGuid();
         var trainingOrder = new List<string>();
 
@@ -383,7 +383,7 @@ public class TrainModelsCommandConsumerTests
     public async Task Consume_PublishesEventWithCorrectMetrics()
     {
         // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+        var command = new TrainModelsCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
         var correlationId = Guid.NewGuid();
         ModelsTrainedEvent? publishedEvent = null;
 
@@ -423,7 +423,7 @@ public class TrainModelsCommandConsumerTests
     public async Task Consume_ReloadsModelsInPredictor_AfterTraining()
     {
         // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+        var command = new TrainModelsCommand(Guid.NewGuid(), DateTimeOffset.UtcNow);
 
         _mockConsumeContext.Message.Returns(command);
         _mockConsumeContext.MessageId.Returns(Guid.NewGuid());

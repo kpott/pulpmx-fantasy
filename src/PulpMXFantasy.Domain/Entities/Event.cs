@@ -1,3 +1,4 @@
+using PulpMXFantasy.Domain.Abstractions;
 using PulpMXFantasy.Domain.Enums;
 
 namespace PulpMXFantasy.Domain.Entities;
@@ -32,7 +33,7 @@ namespace PulpMXFantasy.Domain.Entities;
 /// - Unique constraint on Slug (external API reference)
 /// - Indexed on EventDate for chronological queries
 /// </remarks>
-public class Event
+public class Event : IHasTimestamps
 {
     /// <summary>
     /// Internal unique identifier for the event

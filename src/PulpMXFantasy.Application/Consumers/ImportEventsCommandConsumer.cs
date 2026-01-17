@@ -1,9 +1,10 @@
+using System.Net;
+using System.Text.Json;
 using MassTransit;
 using Microsoft.Extensions.Logging;
 using PulpMXFantasy.Application.Interfaces;
 using PulpMXFantasy.Contracts.Commands;
 using PulpMXFantasy.Contracts.Events;
-using System.Text.Json;
 
 namespace PulpMXFantasy.Application.Consumers;
 
@@ -196,6 +197,27 @@ public class ImportEventsCommandConsumer : IConsumer<ImportEventsCommand>
                 totalCount,
                 failedSlugs.Count);
         }
+        catch (HttpRequestException ex) when (IsTransient(ex))
+        {
+            _logger.LogWarning(
+                ex,
+                "Transient HTTP failure during import, will retry: CommandId={CommandId}, StatusCode={StatusCode}",
+                commandId,
+                ex.StatusCode);
+
+            // Rethrow to trigger MassTransit retry
+            throw;
+        }
+        catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            _logger.LogWarning(
+                ex,
+                "Timeout during import, will retry: CommandId={CommandId}",
+                commandId);
+
+            // Rethrow to trigger MassTransit retry
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(
@@ -204,7 +226,7 @@ public class ImportEventsCommandConsumer : IConsumer<ImportEventsCommand>
                 commandId,
                 ex.Message);
 
-            // Publish CommandFailedEvent - do NOT rethrow to prevent MassTransit retry
+            // Publish CommandFailedEvent - do NOT rethrow for non-transient errors
             await context.Publish(new CommandFailedEvent(
                 commandId,
                 DateTimeOffset.UtcNow,
@@ -212,6 +234,15 @@ public class ImportEventsCommandConsumer : IConsumer<ImportEventsCommand>
                 ex.GetType().Name), cancellationToken);
         }
     }
+
+    /// <summary>
+    /// Determines if an HTTP exception is transient and should be retried.
+    /// </summary>
+    private static bool IsTransient(HttpRequestException ex) =>
+        ex.StatusCode is HttpStatusCode.TooManyRequests // 429
+            or HttpStatusCode.ServiceUnavailable // 503
+            or HttpStatusCode.BadGateway // 502
+            or HttpStatusCode.GatewayTimeout; // 504
 
     /// <summary>
     /// Calculates progress percentage based on completed events.

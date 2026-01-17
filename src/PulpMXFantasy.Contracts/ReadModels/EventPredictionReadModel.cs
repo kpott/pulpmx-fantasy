@@ -25,4 +25,14 @@ public record EventPredictionReadModel
     public required float Confidence { get; init; }
     public required string ModelVersion { get; init; }
     public required DateTimeOffset GeneratedAt { get; init; }
+
+    /// <summary>
+    /// Whether the rider is ineligible to be picked (e.g., picked last week).
+    /// </summary>
+    public bool Ineligible { get; init; }
+
+    /// <summary>
+    /// Reason for ineligibility (e.g., "PICKED LAST WEEK").
+    /// </summary>
+    public string? IneligibleReason { get; init; }
 }

@@ -1,3 +1,4 @@
+using PulpMXFantasy.Domain.Abstractions;
 using PulpMXFantasy.Domain.Enums;
 
 namespace PulpMXFantasy.Domain.Entities;
@@ -37,7 +38,7 @@ namespace PulpMXFantasy.Domain.Entities;
 /// Series data is relatively static (created once per season) but may need
 /// updates for schedule changes or playoff structures.
 /// </remarks>
-public class Series
+public class Series : IHasTimestamps
 {
     /// <summary>
     /// Internal unique identifier for the series

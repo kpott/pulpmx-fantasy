@@ -1,3 +1,5 @@
+using PulpMXFantasy.Domain.Abstractions;
+
 namespace PulpMXFantasy.Domain.Entities;
 
 /// <summary>
@@ -37,7 +39,7 @@ namespace PulpMXFantasy.Domain.Entities;
 /// Team optimizer uses ML predictions to select optimal 8 riders
 /// respecting all constraints (All-Star requirement, consecutive picks, etc.)
 /// </remarks>
-public class Team
+public class Team : IHasTimestamps
 {
     /// <summary>
     /// Internal unique identifier for the team

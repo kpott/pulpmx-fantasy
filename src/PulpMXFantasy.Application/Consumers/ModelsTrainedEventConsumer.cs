@@ -237,7 +237,9 @@ public class ModelsTrainedEventConsumer : IConsumer<ModelsTrainedEvent>
                     UpperBound = p.UpperBound,
                     Confidence = p.Confidence,
                     ModelVersion = modelVersion,
-                    GeneratedAt = DateTimeOffset.UtcNow
+                    GeneratedAt = DateTimeOffset.UtcNow,
+                    Ineligible = eventRider.Ineligible,
+                    IneligibleReason = eventRider.IneligibleReason
                 };
             })
             .ToList();

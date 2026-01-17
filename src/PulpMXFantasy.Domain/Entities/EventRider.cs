@@ -1,3 +1,4 @@
+using PulpMXFantasy.Domain.Abstractions;
 using PulpMXFantasy.Domain.Enums;
 using PulpMXFantasy.Domain.ValueObjects;
 
@@ -44,7 +45,7 @@ namespace PulpMXFantasy.Domain.Entities;
 /// - Unique constraint on (EventId, RiderId) - rider can't be in same event twice
 /// - Indexed on BikeClass for filtering 250 vs 450
 /// </remarks>
-public class EventRider
+public class EventRider : IHasTimestamps
 {
     /// <summary>
     /// Internal unique identifier for this event participation
@@ -144,6 +145,32 @@ public class EventRider
     /// Example: Rider racing with broken collarbone may finish 15th instead of 3rd.
     /// </remarks>
     public bool IsInjured { get; set; } = false;
+
+    /// <summary>
+    /// Whether the rider is ineligible to be picked for fantasy
+    /// </summary>
+    /// <remarks>
+    /// PulpMX Fantasy rule: Cannot pick the same rider in consecutive races.
+    /// If a rider was picked last week, they become ineligible this week.
+    ///
+    /// Used for:
+    /// - Filtering out riders from fantasy team selection
+    /// - UI warnings showing which riders cannot be picked
+    /// - Team optimizer must respect this constraint
+    /// </remarks>
+    public bool Ineligible { get; set; } = false;
+
+    /// <summary>
+    /// Reason for ineligibility (e.g., "PICKED LAST WEEK")
+    /// </summary>
+    /// <remarks>
+    /// Provides context for why a rider cannot be picked:
+    /// - "PICKED LAST WEEK" - most common, due to consecutive pick rule
+    /// - Other reasons may be added by PulpMX staff
+    ///
+    /// Null when rider is eligible.
+    /// </remarks>
+    public string? IneligibleReason { get; set; }
 
     /// <summary>
     /// Percentage of fantasy players who have picked this rider (0-100)

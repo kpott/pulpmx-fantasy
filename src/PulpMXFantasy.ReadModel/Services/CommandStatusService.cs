@@ -59,7 +59,7 @@ public class CommandStatusService : ICommandStatusService
         return (status, history);
     }
 
-    public async Task<List<CommandStatusReadModel>> GetByCorrelationIdAsync(
+    public async Task<IReadOnlyList<CommandStatusReadModel>> GetByCorrelationIdAsync(
         Guid correlationId,
         CancellationToken cancellationToken = default)
     {
@@ -70,7 +70,7 @@ public class CommandStatusService : ICommandStatusService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<CommandStatusReadModel>> GetRecentAsync(
+    public async Task<IReadOnlyList<CommandStatusReadModel>> GetRecentAsync(
         int count = 20,
         string? commandType = null,
         CancellationToken cancellationToken = default)

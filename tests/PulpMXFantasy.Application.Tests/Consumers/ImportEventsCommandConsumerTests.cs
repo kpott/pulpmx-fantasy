@@ -52,6 +52,7 @@ public class ImportEventsCommandConsumerTests
     {
         // Arrange
         var command = new ImportEventsCommand(
+            CommandId: Guid.NewGuid(),
             EventSlugs: new List<string>(),
             Timestamp: DateTimeOffset.UtcNow);
 
@@ -73,6 +74,7 @@ public class ImportEventsCommandConsumerTests
     {
         // Arrange
         var command = new ImportEventsCommand(
+            CommandId: Guid.NewGuid(),
             EventSlugs: new List<string> { "anaheim-1-2025-sx" },
             Timestamp: DateTimeOffset.UtcNow);
 
@@ -111,6 +113,7 @@ public class ImportEventsCommandConsumerTests
         };
 
         var command = new ImportEventsCommand(
+            CommandId: Guid.NewGuid(),
             EventSlugs: slugs,
             Timestamp: DateTimeOffset.UtcNow);
 
@@ -146,6 +149,7 @@ public class ImportEventsCommandConsumerTests
     {
         // Arrange
         var command = new ImportEventsCommand(
+            CommandId: Guid.NewGuid(),
             EventSlugs: new List<string> { "test-event" },
             Timestamp: DateTimeOffset.UtcNow);
 
@@ -183,6 +187,7 @@ public class ImportEventsCommandConsumerTests
         };
 
         var command = new ImportEventsCommand(
+            CommandId: Guid.NewGuid(),
             EventSlugs: slugs,
             Timestamp: DateTimeOffset.UtcNow);
 
@@ -221,6 +226,7 @@ public class ImportEventsCommandConsumerTests
     {
         // Arrange
         var command = new ImportEventsCommand(
+            CommandId: Guid.NewGuid(),
             EventSlugs: new List<string> { "test-event-sx" },
             Timestamp: DateTimeOffset.UtcNow);
 
@@ -256,6 +262,7 @@ public class ImportEventsCommandConsumerTests
         };
 
         var command = new ImportEventsCommand(
+            CommandId: Guid.NewGuid(),
             EventSlugs: slugs,
             Timestamp: DateTimeOffset.UtcNow);
 
@@ -310,6 +317,7 @@ public class ImportEventsCommandConsumerTests
         };
 
         var command = new ImportEventsCommand(
+            CommandId: Guid.NewGuid(),
             EventSlugs: slugs,
             Timestamp: DateTimeOffset.UtcNow);
 
@@ -351,6 +359,7 @@ public class ImportEventsCommandConsumerTests
     {
         // Arrange
         var command = new ImportEventsCommand(
+            CommandId: Guid.NewGuid(),
             EventSlugs: new List<string> { "test-event" },
             Timestamp: DateTimeOffset.UtcNow);
 
@@ -378,6 +387,7 @@ public class ImportEventsCommandConsumerTests
     {
         // Arrange
         var command = new ImportEventsCommand(
+            CommandId: Guid.NewGuid(),
             EventSlugs: new List<string> { "bad-1", "bad-2" },
             Timestamp: DateTimeOffset.UtcNow);
 

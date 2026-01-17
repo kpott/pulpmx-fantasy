@@ -202,6 +202,16 @@ public class ApiEventRider
     /// Calculated fantasy points (null until race completes)
     /// </summary>
     public int? FantasyPoints { get; set; }
+
+    /// <summary>
+    /// Whether rider is ineligible for picking (e.g., picked last week)
+    /// </summary>
+    public bool Ineligible { get; set; }
+
+    /// <summary>
+    /// Reason for ineligibility (e.g., "PICKED LAST WEEK")
+    /// </summary>
+    public string? IneligibleReason { get; set; }
 }
 
 /// <summary>
@@ -578,6 +588,16 @@ public class ApiEventRiderDetailed
     /// Session results (moto1, moto2, qualifying1, qualifying2, etc.)
     /// </summary>
     public Dictionary<string, ApiSessionData>? Sessions { get; set; }
+
+    /// <summary>
+    /// Whether rider is ineligible for picking (e.g., picked last week)
+    /// </summary>
+    public bool Ineligible { get; set; }
+
+    /// <summary>
+    /// Reason for ineligibility (e.g., "PICKED LAST WEEK")
+    /// </summary>
+    public string? IneligibleReason { get; set; }
 }
 
 /// <summary>
