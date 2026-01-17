@@ -3,6 +3,28 @@
     ViewData["Title"] = "Predictions";
 }
 
+@section Styles {
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" />
+    <style>
+        /* Hide DataTables sort icons, keep clickable headers */
+        .predictions-table thead th.sorting:before,
+        .predictions-table thead th.sorting:after,
+        .predictions-table thead th.sorting_asc:before,
+        .predictions-table thead th.sorting_asc:after,
+        .predictions-table thead th.sorting_desc:before,
+        .predictions-table thead th.sorting_desc:after {
+            display: none !important;
+        }
+        .predictions-table thead th {
+            cursor: pointer;
+        }
+        .predictions-table thead th.sorting_asc,
+        .predictions-table thead th.sorting_desc {
+            text-decoration: underline;
+        }
+    </style>
+}
+
 <div class="container mt-4">
     <h1 class="mb-4">Fantasy Point Predictions</h1>
 
@@ -83,7 +105,7 @@
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
-                            <table class="table table-striped table-hover">
+                            <table class="table table-striped table-hover predictions-table">
                                 <thead>
                                     <tr>
                                         <th>Rank</th>
@@ -185,8 +207,22 @@
 </div>
 
 @section Scripts {
+    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Initialize DataTables on prediction tables
+            $('.predictions-table').DataTable({
+                paging: false,
+                searching: false,
+                info: false,
+                order: [[6, 'desc']], // Sort by Pts if Qual (column 6) descending by default
+                columnDefs: [
+                    { orderable: false, targets: [4, 9] } // Disable sorting on All-Star badge and Range columns
+                ]
+            });
+
+            // Local time conversion
             document.querySelectorAll('.local-time').forEach(function(el) {
                 const utc = el.dataset.utc;
                 if (!utc) return;
