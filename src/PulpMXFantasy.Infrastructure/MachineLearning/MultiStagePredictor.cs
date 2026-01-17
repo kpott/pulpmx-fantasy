@@ -447,10 +447,13 @@ public class MultiStagePredictor : IRiderPredictor
     /// 3. Assign unique finish positions 1-22
     /// 4. Riders predicted as DNQ keep PredictedFinish = null
     /// </remarks>
-    public IReadOnlyList<RiderPrediction> PredictBatch(IEnumerable<RiderFeatures> features)
+    public IReadOnlyList<RiderPrediction> PredictBatch(IEnumerable<RiderFeatures> featuresList)
     {
+        // Materialize features list for multiple lookups
+        var allFeatures = featuresList.ToList();
+
         // Step 1: Generate raw predictions for all riders
-        var rawPredictions = features.Select(PredictFantasyPoints).ToList();
+        var rawPredictions = allFeatures.Select(PredictFantasyPoints).ToList();
 
         // Step 2: Force-rank finish positions within each bike class
         var rankedPredictions = new List<RiderPrediction>();
@@ -478,8 +481,27 @@ public class MultiStagePredictor : IRiderPredictor
                 var original = qualifiers[i];
                 var forcedRank = Math.Min(i + 1, 22); // Cap at 22
 
-                // Create new prediction with force-ranked position
-                rankedPredictions.Add(original with { PredictedFinish = forcedRank });
+                // Recalculate points based on force-ranked position
+                // This ensures PointsIfQualifies matches the displayed PredictedFinish
+                var riderFeatures = allFeatures.FirstOrDefault(f => f.RiderId == original.RiderId);
+                int handicap = riderFeatures?.Handicap ?? 0;
+                int adjustedPosition = Math.Max(1, forcedRank - handicap);
+                int basePoints = GetBasePoints(adjustedPosition);
+                int pointsIfQualifies = (!original.IsAllStar && adjustedPosition <= 10)
+                    ? basePoints * 2
+                    : basePoints;
+                float expectedPoints = original.Confidence * pointsIfQualifies;
+                float margin = expectedPoints * 0.25f;
+
+                // Create new prediction with force-ranked position and recalculated points
+                rankedPredictions.Add(original with
+                {
+                    PredictedFinish = forcedRank,
+                    PointsIfQualifies = pointsIfQualifies,
+                    ExpectedPoints = expectedPoints,
+                    LowerBound = Math.Max(0, expectedPoints - margin),
+                    UpperBound = expectedPoints + margin
+                });
             }
 
             // DNQs keep null PredictedFinish

@@ -28,7 +28,7 @@ public class PredictionsViewModel
     public IReadOnlyList<EventPredictionReadModel> Predictions { get; set; } = Array.Empty<EventPredictionReadModel>();
 
     /// <summary>
-    /// Gets predictions grouped by bike class, ordered by expected points.
+    /// Gets predictions grouped by bike class, ordered by points if qualifies.
     /// </summary>
     public IEnumerable<IGrouping<string, EventPredictionReadModel>> GetPredictionsByClass()
     {
@@ -36,7 +36,7 @@ public class PredictionsViewModel
             return Enumerable.Empty<IGrouping<string, EventPredictionReadModel>>();
 
         return Predictions
-            .OrderByDescending(p => p.ExpectedPoints)
+            .OrderByDescending(p => p.PointsIfQualifies)
             .GroupBy(p => p.BikeClass)
             .OrderByDescending(g => g.Key); // 450 first, then 250
     }
