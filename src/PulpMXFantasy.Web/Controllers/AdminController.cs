@@ -270,6 +270,10 @@ public class AdminController : Controller
     {
         return season.ToLowerInvariant() switch
         {
+            "2026-supercross" => new[]
+            {
+                "anaheim2-sx-26", "sandiego-sx-26", "houston-sx-26"
+            },
             "2024-supercross" => new[]
             {
                 "anaheim1-sx-24", "sanfrancisco-sx-24", "sandiego-sx-24", "anaheim2-sx-24",
