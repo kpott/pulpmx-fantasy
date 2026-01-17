@@ -3,96 +3,94 @@
     ViewData["Title"] = "Dashboard";
 }
 
-<div class="container mt-4">
-    <h1 class="mb-4">PulpMX Fantasy Dashboard</h1>
+<h1 class="page-title">Dashboard</h1>
 
-    @if (Model.NextEvent != null)
-    {
-        <div class="card mb-4">
-            <div class="card-header bg-primary text-white">
-                <h3 class="mb-0">Next Event</h3>
-            </div>
-            <div class="card-body">
-                <h4>@Model.NextEvent.Name</h4>
-                <p class="mb-1"><strong>Venue:</strong> @Model.NextEvent.Venue</p>
-                <p class="mb-1"><strong>Location:</strong> @Model.NextEvent.Location</p>
-                <p class="mb-1"><strong>Date:</strong> @Model.NextEvent.EventDate.ToString("MMMM dd, yyyy")</p>
-                <p class="mb-1"><strong>Series:</strong> @Model.NextEvent.SeriesName (@Model.NextEvent.SeasonYear)</p>
+@if (Model.NextEvent != null)
+{
+    <div class="card event-card mb-4">
+        <div class="card-body">
+            <p class="section-title">Next Event</p>
+            <h2 class="event-name">@Model.NextEvent.Name</h2>
+
+            <div class="event-meta">
+                <div class="event-meta-item">
+                    <span class="event-meta-label">Date</span>
+                    <span class="event-meta-value">@Model.NextEvent.EventDate.ToString("MMMM dd, yyyy")</span>
+                </div>
+                <div class="event-meta-item">
+                    <span class="event-meta-label">Series</span>
+                    <span class="event-meta-value">@Model.NextEvent.SeriesName</span>
+                </div>
+                <div class="event-meta-item">
+                    <span class="event-meta-label">Season</span>
+                    <span class="event-meta-value">@Model.NextEvent.SeasonYear</span>
+                </div>
                 @if (Model.NextEvent.LockoutTime.HasValue)
                 {
                     var isLocked = Model.NextEvent.LockoutTime.Value <= DateTimeOffset.UtcNow;
-                    <p class="mb-3">
-                        <strong>Picks Lock:</strong>
-                        @if (isLocked)
-                        {
-                            <span class="badge bg-danger">Locked</span>
-                            <span class="text-muted">at <span class="local-time" data-utc="@Model.NextEvent.LockoutTime.Value.UtcDateTime.ToString("o")"></span></span>
-                        }
-                        else
-                        {
-                            <span class="local-time" data-utc="@Model.NextEvent.LockoutTime.Value.UtcDateTime.ToString("o")"></span>
-                        }
-                    </p>
+                    <div class="event-meta-item">
+                        <span class="event-meta-label">Picks Lock</span>
+                        <span class="event-meta-value">
+                            @if (isLocked)
+                            {
+                                <span class="status-badge status-locked">Locked</span>
+                            }
+                            else
+                            {
+                                <span class="local-time" data-utc="@Model.NextEvent.LockoutTime.Value.UtcDateTime.ToString("o")"></span>
+                            }
+                        </span>
+                    </div>
                 }
-                else
-                {
-                    <p class="mb-3"><strong>Picks Lock:</strong> <span class="text-muted">Not set</span></p>
-                }
+            </div>
 
-                <div class="d-grid gap-2 d-md-flex">
-                    <a asp-controller="Predictions" asp-action="Index" class="btn btn-success">
-                        View Predictions
-                    </a>
-                </div>
-            </div>
-        </div>
-    }
-    else
-    {
-        <div class="alert alert-info" role="alert">
-            <h4 class="alert-heading">No Upcoming Events</h4>
-            <p>There are no upcoming events scheduled at this time.</p>
-            <hr>
-            <p class="mb-0">Check back later or sync data from PulpMX API in the <a asp-controller="Admin" asp-action="Index" class="alert-link">Admin panel</a>.</p>
-        </div>
-    }
-
-    <div class="row mt-4">
-        <div class="col-md-6 mb-3">
-            <div class="card h-100">
-                <div class="card-body">
-                    <h5 class="card-title">Total Riders</h5>
-                    <p class="display-4">@Model.TotalRiders</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6 mb-3">
-            <div class="card h-100">
-                <div class="card-body">
-                    <h5 class="card-title">Total Events</h5>
-                    <p class="display-4">@Model.TotalEvents</p>
-                </div>
-            </div>
+            <a asp-controller="Predictions" asp-action="Index" class="btn btn-primary">
+                View Predictions
+            </a>
         </div>
     </div>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-body empty-state">
+            <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <h3 class="empty-state-title">No Upcoming Events</h3>
+            <p class="empty-state-text">Sync data from the PulpMX API in the Admin panel to get started.</p>
+            <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary mt-3">Go to Admin</a>
+        </div>
+    </div>
+}
 
-    <div class="row mt-3">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Quick Actions</h5>
-                </div>
-                <div class="card-body">
-                    <div class="d-grid gap-2 d-md-block">
-                        <a asp-controller="Predictions" asp-action="Index" class="btn btn-primary me-2">
-                            View Predictions
-                        </a>
-                        <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary">
-                            Admin Panel
-                        </a>
-                    </div>
-                </div>
-            </div>
+<div class="grid-2 mb-4">
+    <div class="card card-lift">
+        <div class="card-body stat-card">
+            <div class="stat-value">@Model.TotalRiders</div>
+            <div class="stat-label">Riders</div>
+        </div>
+    </div>
+    <div class="card card-lift">
+        <div class="card-body stat-card">
+            <div class="stat-value">@Model.TotalEvents</div>
+            <div class="stat-label">Events</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5>Quick Actions</h5>
+    </div>
+    <div class="card-body">
+        <div class="quick-actions">
+            <a asp-controller="Predictions" asp-action="Index" class="btn btn-primary">
+                View Predictions
+            </a>
+            <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary">
+                Admin Panel
+            </a>
         </div>
     </div>
 </div>
@@ -105,13 +103,7 @@
                 if (!utc) return;
 
                 const date = new Date(utc);
-                const format = el.dataset.format;
-
-                if (format === 'time') {
-                    el.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                } else {
-                    el.textContent = date.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
-                }
+                el.textContent = date.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
             });
         });
     </script>

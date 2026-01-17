@@ -5,205 +5,199 @@
 
 @section Styles {
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" />
-    <style>
-        /* Hide DataTables sort icons, keep clickable headers */
-        .predictions-table thead th.sorting:before,
-        .predictions-table thead th.sorting:after,
-        .predictions-table thead th.sorting_asc:before,
-        .predictions-table thead th.sorting_asc:after,
-        .predictions-table thead th.sorting_desc:before,
-        .predictions-table thead th.sorting_desc:after {
-            display: none !important;
-        }
-        .predictions-table thead th {
-            cursor: pointer;
-        }
-        .predictions-table thead th.sorting_asc,
-        .predictions-table thead th.sorting_desc {
-            text-decoration: underline;
-        }
-    </style>
 }
 
-<div class="container mt-4">
-    <h1 class="mb-4">Fantasy Point Predictions</h1>
+<h1 class="page-title">Predictions</h1>
 
-    @if (!string.IsNullOrEmpty(ViewBag.Message))
-    {
-        <div class="alert alert-info" role="alert">
-            @ViewBag.Message
-        </div>
-    }
+@if (!string.IsNullOrEmpty(ViewBag.Message))
+{
+    <div class="alert alert-info">@ViewBag.Message</div>
+}
 
-    @if (!string.IsNullOrEmpty(ViewBag.Error))
-    {
-        <div class="alert alert-danger" role="alert">
-            @ViewBag.Error
-        </div>
-    }
+@if (!string.IsNullOrEmpty(ViewBag.Error))
+{
+    <div class="alert alert-danger">@ViewBag.Error</div>
+}
 
-    @if (Model.AllEvents.Any())
-    {
-        <div class="mb-4">
-            <label for="eventSelector" class="form-label"><strong>Select Event:</strong></label>
-            <select id="eventSelector" class="form-select" style="max-width: 400px;" onchange="if(this.value) window.location.href=this.value">
-                @foreach (var evt in Model.AllEvents)
-                {
-                    var url = Url.Action("Event", "Predictions", new { eventId = evt.Id });
-                    var isSelected = Model.Event?.Id == evt.Id;
-                    var statusLabel = evt.IsCompleted ? " (Completed)" :
-                                      evt.EventDate < DateTimeOffset.UtcNow ? " (In Progress)" : "";
-                    <option value="@url" selected="@isSelected">@evt.Name - @evt.EventDate.ToString("MMM dd, yyyy")@statusLabel</option>
-                }
-            </select>
-        </div>
-    }
-
-    @if (Model.Event != null)
-    {
-        <div class="card mb-4">
-            <div class="card-header bg-primary text-white">
-                <h3 class="mb-0">@Model.Event.Name</h3>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-8">
-                        <p class="mb-1"><strong>Date:</strong> @Model.Event.EventDate.ToString("MMMM dd, yyyy")</p>
-                        <p class="mb-1"><strong>Series:</strong> @Model.Event.SeriesName (@Model.Event.SeasonYear)</p>
-                    </div>
-                    <div class="col-md-4 text-md-end">
-                        @if (Model.Event.LockoutTime.HasValue)
-                        {
-                            var isLocked = Model.Event.LockoutTime.Value <= DateTimeOffset.UtcNow;
-                            @if (isLocked)
-                            {
-                                <div class="d-inline-block px-3 py-2 bg-danger text-white rounded">
-                                    <strong>Predictions Locked</strong><br>
-                                    <small>Locked at <span class="local-time" data-utc="@Model.Event.LockoutTime.Value.UtcDateTime.ToString("o")"></span></small>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="d-inline-block px-3 py-2 bg-warning text-dark rounded">
-                                    <strong>Picks Lock At</strong><br>
-                                    <span class="local-time" data-utc="@Model.Event.LockoutTime.Value.UtcDateTime.ToString("o")"></span>
-                                </div>
-                            }
-                        }
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        @if (Model.Predictions.Any())
-        {
-            @foreach (var classGroup in Model.GetPredictionsByClass())
+@if (Model.AllEvents.Any())
+{
+    <div class="event-selector">
+        <label for="eventSelector">Event</label>
+        <select id="eventSelector" class="form-select" onchange="if(this.value) window.location.href=this.value">
+            @foreach (var evt in Model.AllEvents)
             {
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h4 class="mb-0">@classGroup.Key - Predicted Finish Order</h4>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped table-hover predictions-table">
-                                <thead>
-                                    <tr>
-                                        <th>Rank</th>
-                                        <th>Rider</th>
-                                        <th>Number</th>
-                                        <th>Handicap</th>
-                                        <th>All-Star</th>
-                                        <th>Pred. Finish</th>
-                                        <th>Pts if Qual</th>
-                                        <th>Expected Pts</th>
-                                        <th>Confidence</th>
-                                        <th>Range</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @{
-                                        var rank = 1;
-                                    }
-                                    @foreach (var prediction in classGroup)
-                                    {
-                                        <tr>
-                                            <td><strong>@rank</strong></td>
-                                            <td>@prediction.RiderName</td>
-                                            <td>@prediction.RiderNumber</td>
-                                            <td>
-                                                @if (prediction.Handicap > 0)
-                                                {
-                                                    <span class="text-success">+@prediction.Handicap</span>
-                                                }
-                                                else if (prediction.Handicap < 0)
-                                                {
-                                                    <span class="text-danger">@prediction.Handicap</span>
-                                                }
-                                                else
-                                                {
-                                                    <span>0</span>
-                                                }
-                                            </td>
-                                            <td>
-                                                @if (prediction.IsAllStar)
-                                                {
-                                                    <span class="badge bg-warning text-dark">All-Star</span>
-                                                }
-                                                else
-                                                {
-                                                    <span>-</span>
-                                                }
-                                            </td>
-                                            <td>
-                                                @if (prediction.PredictedFinish.HasValue)
-                                                {
-                                                    <strong>@prediction.PredictedFinish</strong>
-                                                }
-                                                else
-                                                {
-                                                    <span class="text-muted">DNQ</span>
-                                                }
-                                            </td>
-                                            <td><strong>@prediction.PointsIfQualifies.ToString("F0")</strong></td>
-                                            <td>@prediction.ExpectedPoints.ToString("F1")</td>
-                                            <td>
-                                                @{
-                                                    var confidencePercent = prediction.Confidence * 100;
-                                                    var confidenceBadge = confidencePercent >= 70 ? "bg-success" :
-                                                                         confidencePercent >= 40 ? "bg-warning text-dark" :
-                                                                         "bg-secondary";
-                                                }
-                                                <span class="badge @confidenceBadge">@confidencePercent.ToString("F0")%</span>
-                                            </td>
-                                            <td>@prediction.LowerBound.ToString("F1") - @prediction.UpperBound.ToString("F1")</td>
-                                        </tr>
-                                        rank++;
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
+                var url = Url.Action("Event", "Predictions", new { eventId = evt.Id });
+                var isSelected = Model.Event?.Id == evt.Id;
+                var statusLabel = evt.IsCompleted ? " (Completed)" :
+                                  evt.EventDate < DateTimeOffset.UtcNow ? " (In Progress)" : "";
+                <option value="@url" selected="@isSelected">@evt.Name - @evt.EventDate.ToString("MMM dd, yyyy")@statusLabel</option>
+            }
+        </select>
+    </div>
+}
+
+@if (Model.Event != null)
+{
+    <div class="card event-card mb-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                <div>
+                    <p class="section-title mb-2">Event Details</p>
+                    <h2 class="event-name mb-0">@Model.Event.Name</h2>
+                    <p class="text-muted mt-1 mb-0">
+                        @Model.Event.EventDate.ToString("MMMM dd, yyyy") &middot; @Model.Event.SeriesName
+                    </p>
+                </div>
+                <div>
+                    @if (Model.Event.LockoutTime.HasValue)
+                    {
+                        var isLocked = Model.Event.LockoutTime.Value <= DateTimeOffset.UtcNow;
+                        @if (isLocked)
+                        {
+                            <span class="status-badge status-locked">Locked</span>
+                        }
+                        else
+                        {
+                            <span class="status-badge status-pending">
+                                Locks <span class="local-time" data-utc="@Model.Event.LockoutTime.Value.UtcDateTime.ToString("o")"></span>
+                            </span>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (Model.Predictions.Any())
+    {
+        @foreach (var classGroup in Model.GetPredictionsByClass())
+        {
+            var classLabel = classGroup.Key == "Class450" ? "450" : "250";
+            var classStyle = classGroup.Key == "Class450" ? "class-450" : "class-250";
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <div class="class-header">
+                        <span class="class-badge @classStyle">@classLabel</span>
+                        <span class="text-muted" style="font-size: 0.875rem;">Predicted Finish Order</span>
                     </div>
                 </div>
-            }
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover predictions-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="width: 60px;">#</th>
+                                    <th>Rider</th>
+                                    <th style="width: 80px;">Number</th>
+                                    <th style="width: 90px;">Handicap</th>
+                                    <th style="width: 90px;">Type</th>
+                                    <th style="width: 80px;">Finish</th>
+                                    <th style="width: 90px;">Points</th>
+                                    <th style="width: 100px;">Expected</th>
+                                    <th style="width: 100px;">Confidence</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{
+                                    var rank = 1;
+                                }
+                                @foreach (var prediction in classGroup)
+                                {
+                                    var rankClass = rank <= 3 ? "top-3" : "";
+                                    <tr>
+                                        <td>
+                                            <span class="prediction-rank @rankClass">@rank</span>
+                                        </td>
+                                        <td>
+                                            <strong>@prediction.RiderName</strong>
+                                        </td>
+                                        <td>@prediction.RiderNumber</td>
+                                        <td>
+                                            @if (prediction.Handicap > 0)
+                                            {
+                                                <span class="handicap positive">+@prediction.Handicap</span>
+                                            }
+                                            else if (prediction.Handicap < 0)
+                                            {
+                                                <span class="handicap negative">@prediction.Handicap</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="handicap zero">0</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (prediction.IsAllStar)
+                                            {
+                                                <span class="allstar-badge">All-Star</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">-</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (prediction.PredictedFinish.HasValue)
+                                            {
+                                                <span class="points-value">@prediction.PredictedFinish</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">DNQ</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span class="points-value highlight">@prediction.PointsIfQualifies.ToString("F0")</span>
+                                        </td>
+                                        <td>
+                                            <span class="points-value">@prediction.ExpectedPoints.ToString("F1")</span>
+                                        </td>
+                                        <td>
+                                            @{
+                                                var confidencePercent = prediction.Confidence * 100;
+                                                var confidenceClass = confidencePercent >= 70 ? "high" :
+                                                                      confidencePercent >= 40 ? "medium" : "low";
+                                            }
+                                            <div class="confidence-indicator">
+                                                <div class="confidence-bar">
+                                                    <div class="confidence-bar-fill @confidenceClass" style="width: @confidencePercent%"></div>
+                                                </div>
+                                                <span class="confidence-value">@confidencePercent.ToString("F0")%</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    rank++;
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
 
-            <div class="text-muted small">
-                <p>Model version: @Model.Predictions.FirstOrDefault()?.ModelVersion | Generated: @Model.Predictions.FirstOrDefault()?.GeneratedAt.ToString("g")</p>
-            </div>
-        }
-        else
-        {
-            <div class="alert alert-warning" role="alert">
-                <h4 class="alert-heading">No Predictions Available</h4>
-                <p>Predictions have not been generated for this event yet.</p>
-                <hr>
-                <p class="mb-0">Go to the Admin panel to train models and generate predictions.</p>
-            </div>
-        }
+        <p class="model-info">
+            Model: @Model.Predictions.FirstOrDefault()?.ModelVersion &middot;
+            Generated: @Model.Predictions.FirstOrDefault()?.GeneratedAt.ToString("g")
+        </p>
     }
+    else
+    {
+        <div class="card">
+            <div class="card-body empty-state">
+                <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <h3 class="empty-state-title">No Predictions Available</h3>
+                <p class="empty-state-text">Train models in the Admin panel to generate predictions.</p>
+                <a asp-controller="Admin" asp-action="Index" class="btn btn-secondary mt-3">Go to Admin</a>
+            </div>
+        </div>
+    }
+}
 
-    <div class="mt-4">
-        <a asp-controller="Home" asp-action="Index" class="btn btn-secondary">Back to Dashboard</a>
-    </div>
+<div class="mt-4">
+    <a asp-controller="Home" asp-action="Index" class="btn btn-secondary">Back to Dashboard</a>
 </div>
 
 @section Scripts {
@@ -211,14 +205,14 @@
     <script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Initialize DataTables on prediction tables
+            // Initialize DataTables
             $('.predictions-table').DataTable({
                 paging: false,
                 searching: false,
                 info: false,
-                order: [[6, 'desc']], // Sort by Pts if Qual (column 6) descending by default
+                order: [[6, 'desc']], // Sort by Points column
                 columnDefs: [
-                    { orderable: false, targets: [4, 9] } // Disable sorting on All-Star badge and Range columns
+                    { orderable: false, targets: [4, 8] }
                 ]
             });
 
@@ -228,13 +222,7 @@
                 if (!utc) return;
 
                 const date = new Date(utc);
-                const format = el.dataset.format;
-
-                if (format === 'time') {
-                    el.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                } else {
-                    el.textContent = date.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
-                }
+                el.textContent = date.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
             });
         });
     </script>
