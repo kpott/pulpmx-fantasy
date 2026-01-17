@@ -66,6 +66,11 @@ public class ReadDbContext : DbContext
     /// </summary>
     public DbSet<ModelMetadataReadModel> ModelMetadata => Set<ModelMetadataReadModel>();
 
+    /// <summary>
+    /// Command progress timeline entries for history tracking.
+    /// </summary>
+    public DbSet<CommandProgressHistoryReadModel> CommandProgressHistory => Set<CommandProgressHistoryReadModel>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

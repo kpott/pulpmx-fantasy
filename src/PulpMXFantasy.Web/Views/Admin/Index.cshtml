@@ -30,6 +30,11 @@
     </div>
 }
 
+<!-- SignalR Connection Status -->
+<div id="connectionStatus" class="alert alert-secondary mb-3" style="padding: 0.5rem 1rem; font-size: 0.875rem;">
+    <span id="connectionIcon">&#9679;</span> <span id="connectionText">Connecting...</span>
+</div>
+
 <div class="grid-2 mb-4">
     <!-- Data Import -->
     <div class="card">
@@ -140,27 +145,29 @@
 
 <!-- Command Status -->
 <div class="card mb-4">
-    <div class="card-header">
-        <h5>Command Status</h5>
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Command Status</h5>
+        <span class="badge bg-secondary" id="commandCount">@(ViewBag.RecentStatuses != null ? ((IEnumerable<dynamic>)ViewBag.RecentStatuses).Count() : 0)</span>
     </div>
     <div class="card-body">
-        @if (ViewBag.RecentStatuses != null && ((IEnumerable<dynamic>)ViewBag.RecentStatuses).Any())
-        {
-            <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead>
-                        <tr>
-                            <th>Command</th>
-                            <th>Status</th>
-                            <th>Started</th>
-                            <th>Completed</th>
-                            <th>Message</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="commandTable">
+                <thead>
+                    <tr>
+                        <th>Command</th>
+                        <th>Status</th>
+                        <th>Progress</th>
+                        <th>Started</th>
+                        <th>Duration</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody id="commandTableBody">
+                    @if (ViewBag.RecentStatuses != null && ((IEnumerable<dynamic>)ViewBag.RecentStatuses).Any())
+                    {
                         @foreach (var status in ViewBag.RecentStatuses)
                         {
-                            <tr>
+                            <tr class="command-row" data-command-id="@status.CommandId" style="cursor: pointer;">
                                 <td><span style="font-size: 0.8125rem;">@status.CommandType</span></td>
                                 <td>
                                     @if (status.Status == "Completed")
@@ -181,22 +188,48 @@
                                     }
                                 </td>
                                 <td>
-                                    <span class="local-time" style="font-size: 0.8125rem;" data-utc="@status.StartedAt.UtcDateTime.ToString("o")" data-format="time"></span>
+                                    @if (status.Status == "Running" || status.Status == "Pending")
+                                    {
+                                        <div class="progress" style="height: 20px; min-width: 80px;">
+                                            <div class="progress-bar" role="progressbar" style="width: @(status.ProgressPercentage)%;">@(status.ProgressPercentage)%</div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span style="font-size: 0.8125rem;">@(status.ProgressPercentage)%</span>
+                                    }
                                 </td>
                                 <td>
-                                    <span class="local-time" style="font-size: 0.8125rem;" data-utc="@status.CompletedAt?.UtcDateTime.ToString("o")" data-format="time">-</span>
+                                    <span class="local-time" style="font-size: 0.8125rem;" data-utc="@status.StartedAt.UtcDateTime.ToString("o")" data-format="datetime"></span>
+                                </td>
+                                <td>
+                                    @if (status.DurationMs != null)
+                                    {
+                                        <span style="font-size: 0.8125rem;">@FormatDuration((long)status.DurationMs)</span>
+                                    }
+                                    else if (status.CompletedAt != null)
+                                    {
+                                        var duration = ((DateTimeOffset)status.CompletedAt - (DateTimeOffset)status.StartedAt).TotalMilliseconds;
+                                        <span style="font-size: 0.8125rem;">@FormatDuration((long)duration)</span>
+                                    }
+                                    else
+                                    {
+                                        <span style="font-size: 0.8125rem;">-</span>
+                                    }
                                 </td>
                                 <td><span style="font-size: 0.8125rem;">@status.ProgressMessage</span></td>
                             </tr>
                         }
-                    </tbody>
-                </table>
-            </div>
-        }
-        else
-        {
-            <p class="text-muted mb-0" style="font-size: 0.875rem;">No recent commands</p>
-        }
+                    }
+                    else
+                    {
+                        <tr id="noCommandsRow">
+                            <td colspan="6" class="text-muted" style="font-size: 0.875rem;">No recent commands</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -205,9 +238,408 @@
     <a asp-controller="Predictions" asp-action="Index" class="btn btn-outline-primary">View Predictions</a>
 </div>
 
+<!-- Slide-out Panel for Command Details -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="commandDetailsPanel" aria-labelledby="commandDetailsPanelLabel">
+    <div class="offcanvas-header">
+        <h5 class="offcanvas-title" id="commandDetailsPanelLabel">Command Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body">
+        <div id="commandDetailsLoading" class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+        <div id="commandDetailsContent" style="display: none;">
+            <!-- Command Info -->
+            <div class="mb-4">
+                <h6 class="text-muted mb-2">Command Info</h6>
+                <div class="card bg-light">
+                    <div class="card-body py-2">
+                        <div class="row">
+                            <div class="col-6">
+                                <small class="text-muted">Type</small>
+                                <div id="detailCommandType" style="font-weight: 500;"></div>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">Status</small>
+                                <div id="detailStatus"></div>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-6">
+                                <small class="text-muted">Started</small>
+                                <div id="detailStartedAt" style="font-size: 0.875rem;"></div>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">Duration</small>
+                                <div id="detailDuration" style="font-size: 0.875rem;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Timeline -->
+            <div class="mb-4">
+                <h6 class="text-muted mb-2">Progress Timeline</h6>
+                <div id="progressTimeline" class="timeline">
+                    <!-- Timeline items will be inserted here -->
+                </div>
+            </div>
+
+            <!-- Result Data (expandable) -->
+            <div id="resultDataSection" style="display: none;">
+                <h6 class="text-muted mb-2">Result Data</h6>
+                <div class="card bg-light">
+                    <div class="card-body py-2">
+                        <pre id="resultDataContent" style="font-size: 0.75rem; max-height: 200px; overflow: auto; margin: 0;"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorSection" style="display: none;">
+                <h6 class="text-muted mb-2">Error</h6>
+                <div class="alert alert-danger mb-0">
+                    <span id="errorMessage"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 @section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        // =====================================================================
+        // SIGNALR CONNECTION
+        // =====================================================================
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/hubs/admin")
+            .withAutomaticReconnect([0, 1000, 5000, 10000, 30000])
+            .configureLogging(signalR.LogLevel.Information)
+            .build();
+
+        let currentCommandId = null;
+        let offcanvas = null;
+
+        // Connection state handling
+        function updateConnectionStatus(status, color) {
+            const statusEl = document.getElementById('connectionStatus');
+            const iconEl = document.getElementById('connectionIcon');
+            const textEl = document.getElementById('connectionText');
+
+            statusEl.className = `alert alert-${color} mb-3`;
+            statusEl.style.padding = '0.5rem 1rem';
+            statusEl.style.fontSize = '0.875rem';
+            textEl.textContent = status;
+        }
+
+        connection.onreconnecting(() => {
+            updateConnectionStatus('Reconnecting...', 'warning');
+        });
+
+        connection.onreconnected(() => {
+            updateConnectionStatus('Connected (live updates)', 'success');
+            connection.invoke('JoinAdminGroup');
+        });
+
+        connection.onclose(() => {
+            updateConnectionStatus('Disconnected', 'danger');
+        });
+
+        // =====================================================================
+        // SIGNALR EVENT HANDLERS
+        // =====================================================================
+
+        // Command Started
+        connection.on("CommandStarted", (data) => {
+            console.log('CommandStarted', data);
+            addOrUpdateCommandRow(data.commandId, {
+                commandType: data.commandType,
+                status: 'Running',
+                progressPercentage: 0,
+                startedAt: data.startedAt,
+                progressMessage: 'Starting...'
+            });
+        });
+
+        // Command Progress
+        connection.on("CommandProgress", (data) => {
+            console.log('CommandProgress', data);
+            updateCommandRow(data.commandId, {
+                status: 'Running',
+                progressPercentage: data.progressPercentage,
+                progressMessage: data.progressMessage
+            });
+
+            // Update timeline if panel is open for this command
+            if (currentCommandId === data.commandId) {
+                addTimelineItem({
+                    message: data.progressMessage,
+                    progressPercentage: data.progressPercentage,
+                    occurredAt: data.updatedAt,
+                    milestoneName: data.milestoneName
+                });
+            }
+        });
+
+        // Command Completed
+        connection.on("CommandCompleted", (data) => {
+            console.log('CommandCompleted', data);
+            updateCommandRow(data.commandId, {
+                status: 'Completed',
+                progressPercentage: 100,
+                completedAt: data.completedAt,
+                progressMessage: data.completionMessage,
+                durationMs: data.durationMs
+            });
+
+            if (currentCommandId === data.commandId) {
+                updatePanelStatus('Completed', data.durationMs);
+                addTimelineItem({
+                    message: data.completionMessage || 'Completed',
+                    progressPercentage: 100,
+                    occurredAt: data.completedAt,
+                    milestoneName: 'Complete'
+                });
+            }
+        });
+
+        // Command Failed
+        connection.on("CommandFailed", (data) => {
+            console.log('CommandFailed', data);
+            updateCommandRow(data.commandId, {
+                status: 'Failed',
+                completedAt: data.failedAt,
+                progressMessage: data.errorMessage,
+                durationMs: data.durationMs
+            });
+
+            if (currentCommandId === data.commandId) {
+                updatePanelStatus('Failed', data.durationMs);
+                document.getElementById('errorSection').style.display = 'block';
+                document.getElementById('errorMessage').textContent = data.errorMessage;
+            }
+        });
+
+        // =====================================================================
+        // TABLE UPDATE FUNCTIONS
+        // =====================================================================
+
+        function addOrUpdateCommandRow(commandId, data) {
+            const tbody = document.getElementById('commandTableBody');
+            let row = tbody.querySelector(`tr[data-command-id="${commandId}"]`);
+
+            // Remove "no commands" row if exists
+            const noCommandsRow = document.getElementById('noCommandsRow');
+            if (noCommandsRow) noCommandsRow.remove();
+
+            if (!row) {
+                row = document.createElement('tr');
+                row.className = 'command-row';
+                row.dataset.commandId = commandId;
+                row.style.cursor = 'pointer';
+                row.addEventListener('click', () => showCommandDetails(commandId));
+
+                // Insert at top
+                tbody.insertBefore(row, tbody.firstChild);
+
+                // Update count
+                const countEl = document.getElementById('commandCount');
+                countEl.textContent = parseInt(countEl.textContent) + 1;
+            }
+
+            row.innerHTML = `
+                <td><span style="font-size: 0.8125rem;">${data.commandType}</span></td>
+                <td>${getStatusBadge(data.status)}</td>
+                <td>${getProgressCell(data.status, data.progressPercentage)}</td>
+                <td><span style="font-size: 0.8125rem;">${formatDateTime(data.startedAt)}</span></td>
+                <td><span style="font-size: 0.8125rem;">${data.durationMs ? formatDuration(data.durationMs) : '-'}</span></td>
+                <td><span style="font-size: 0.8125rem;">${data.progressMessage || ''}</span></td>
+            `;
+        }
+
+        function updateCommandRow(commandId, data) {
+            const row = document.querySelector(`tr[data-command-id="${commandId}"]`);
+            if (!row) return;
+
+            // Update status badge
+            if (data.status) {
+                row.cells[1].innerHTML = getStatusBadge(data.status);
+            }
+
+            // Update progress
+            if (data.progressPercentage !== undefined) {
+                row.cells[2].innerHTML = getProgressCell(data.status, data.progressPercentage);
+            }
+
+            // Update duration
+            if (data.durationMs) {
+                row.cells[4].innerHTML = `<span style="font-size: 0.8125rem;">${formatDuration(data.durationMs)}</span>`;
+            }
+
+            // Update message
+            if (data.progressMessage) {
+                row.cells[5].innerHTML = `<span style="font-size: 0.8125rem;">${data.progressMessage}</span>`;
+            }
+        }
+
+        function getStatusBadge(status) {
+            const colors = {
+                'Completed': 'success',
+                'Failed': 'danger',
+                'Running': 'primary',
+                'Pending': 'secondary'
+            };
+            return `<span class="badge bg-${colors[status] || 'secondary'}">${status}</span>`;
+        }
+
+        function getProgressCell(status, percentage) {
+            if (status === 'Running' || status === 'Pending') {
+                return `<div class="progress" style="height: 20px; min-width: 80px;">
+                    <div class="progress-bar" role="progressbar" style="width: ${percentage}%;">${percentage}%</div>
+                </div>`;
+            }
+            return `<span style="font-size: 0.8125rem;">${percentage}%</span>`;
+        }
+
+        // =====================================================================
+        // SLIDE-OUT PANEL
+        // =====================================================================
+
+        async function showCommandDetails(commandId) {
+            currentCommandId = commandId;
+
+            // Show panel
+            const panelEl = document.getElementById('commandDetailsPanel');
+            offcanvas = new bootstrap.Offcanvas(panelEl);
+            offcanvas.show();
+
+            // Show loading
+            document.getElementById('commandDetailsLoading').style.display = 'block';
+            document.getElementById('commandDetailsContent').style.display = 'none';
+
+            try {
+                const response = await fetch(`/Admin/GetCommandDetails?commandId=${commandId}`);
+                if (!response.ok) throw new Error('Failed to load');
+
+                const data = await response.json();
+                displayCommandDetails(data);
+            } catch (error) {
+                console.error('Error loading command details:', error);
+            }
+
+            // Clear on close
+            panelEl.addEventListener('hidden.bs.offcanvas', () => {
+                currentCommandId = null;
+            }, { once: true });
+        }
+
+        function displayCommandDetails(data) {
+            document.getElementById('commandDetailsLoading').style.display = 'none';
+            document.getElementById('commandDetailsContent').style.display = 'block';
+
+            // Command info
+            document.getElementById('detailCommandType').textContent = data.commandType;
+            document.getElementById('detailStatus').innerHTML = getStatusBadge(data.status);
+            document.getElementById('detailStartedAt').textContent = formatDateTimeFull(data.startedAt);
+            document.getElementById('detailDuration').textContent = data.durationMs ? formatDuration(data.durationMs) : '-';
+
+            // Timeline
+            const timeline = document.getElementById('progressTimeline');
+            timeline.innerHTML = '';
+
+            if (data.history && data.history.length > 0) {
+                data.history.forEach(item => addTimelineItem(item));
+            }
+
+            // Result data
+            if (data.resultData) {
+                document.getElementById('resultDataSection').style.display = 'block';
+                try {
+                    const parsed = JSON.parse(data.resultData);
+                    document.getElementById('resultDataContent').textContent = JSON.stringify(parsed, null, 2);
+                } catch {
+                    document.getElementById('resultDataContent').textContent = data.resultData;
+                }
+            } else {
+                document.getElementById('resultDataSection').style.display = 'none';
+            }
+
+            // Error
+            if (data.errorMessage) {
+                document.getElementById('errorSection').style.display = 'block';
+                document.getElementById('errorMessage').textContent = data.errorMessage;
+            } else {
+                document.getElementById('errorSection').style.display = 'none';
+            }
+        }
+
+        function addTimelineItem(item) {
+            const timeline = document.getElementById('progressTimeline');
+
+            const div = document.createElement('div');
+            div.className = 'timeline-item';
+            div.innerHTML = `
+                <div class="timeline-marker" style="background: ${item.progressPercentage === 100 ? '#198754' : '#0d6efd'};"></div>
+                <div class="timeline-content">
+                    <div class="timeline-header">
+                        ${item.milestoneName ? `<span class="badge bg-secondary me-2">${item.milestoneName}</span>` : ''}
+                        <span class="text-muted" style="font-size: 0.75rem;">${formatTime(item.occurredAt)}</span>
+                    </div>
+                    <div class="timeline-message">${item.message}</div>
+                    <div class="timeline-progress text-muted" style="font-size: 0.75rem;">${item.progressPercentage}%</div>
+                </div>
+            `;
+            timeline.appendChild(div);
+            timeline.scrollTop = timeline.scrollHeight;
+        }
+
+        function updatePanelStatus(status, durationMs) {
+            document.getElementById('detailStatus').innerHTML = getStatusBadge(status);
+            if (durationMs) {
+                document.getElementById('detailDuration').textContent = formatDuration(durationMs);
+            }
+        }
+
+        // =====================================================================
+        // UTILITY FUNCTIONS
+        // =====================================================================
+
+        function formatTime(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        function formatDateTime(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        function formatDateTimeFull(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' });
+        }
+
+        function formatDuration(ms) {
+            if (ms < 1000) return `${ms}ms`;
+            if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+            const minutes = Math.floor(ms / 60000);
+            const seconds = Math.floor((ms % 60000) / 1000);
+            return `${minutes}m ${seconds}s`;
+        }
+
+        // =====================================================================
+        // INITIALIZATION
+        // =====================================================================
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Format local times
             document.querySelectorAll('.local-time').forEach(function(el) {
                 const utc = el.dataset.utc;
                 if (!utc) return;
@@ -217,10 +649,41 @@
 
                 if (format === 'time') {
                     el.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                } else if (format === 'datetime') {
+                    el.textContent = date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                 } else {
                     el.textContent = date.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
                 }
             });
+
+            // Add click handlers to existing rows
+            document.querySelectorAll('.command-row').forEach(row => {
+                row.addEventListener('click', () => {
+                    const commandId = row.dataset.commandId;
+                    showCommandDetails(commandId);
+                });
+            });
+
+            // Start SignalR connection
+            try {
+                await connection.start();
+                updateConnectionStatus('Connected (live updates)', 'success');
+                await connection.invoke('JoinAdminGroup');
+            } catch (err) {
+                console.error('SignalR connection failed:', err);
+                updateConnectionStatus('Failed to connect', 'danger');
+            }
         });
     </script>
+}
+
+@functions {
+    string FormatDuration(long ms)
+    {
+        if (ms < 1000) return $"{ms}ms";
+        if (ms < 60000) return $"{(ms / 1000.0):F1}s";
+        var minutes = ms / 60000;
+        var seconds = (ms % 60000) / 1000;
+        return $"{minutes}m {seconds}s";
+    }
 }

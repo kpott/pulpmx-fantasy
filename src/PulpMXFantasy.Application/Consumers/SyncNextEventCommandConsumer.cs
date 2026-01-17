@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using PulpMXFantasy.Application.Interfaces;
 using PulpMXFantasy.Contracts.Commands;
 using PulpMXFantasy.Contracts.Events;
-using PulpMXFantasy.Contracts.Interfaces;
+using System.Text.Json;
 
 namespace PulpMXFantasy.Application.Consumers;
 
@@ -14,7 +14,7 @@ namespace PulpMXFantasy.Application.Consumers;
 /// WHY THIS HANDLER EXISTS:
 /// ========================
 /// MassTransit consumer that orchestrates next event synchronization:
-/// 1. Updates command status (Pending -> Running -> Completed/Failed)
+/// 1. Publishes status events (Started -> Progress -> Completed/Failed)
 /// 2. Calls EventSyncService to sync from PulpMX API
 /// 3. Publishes EventSyncedEvent on success (triggers downstream workflows)
 ///
@@ -22,20 +22,19 @@ namespace PulpMXFantasy.Application.Consumers;
 /// =================
 ///
 /// 1. **Does NOT rethrow exceptions**
-///    - Marks status as Failed instead of rethrowing
+///    - Publishes CommandFailedEvent instead of rethrowing
 ///    - Prevents MassTransit retry storm
-///    - Allows UI to display error to user
+///    - Allows UI to display error to user via SignalR
 ///
-/// 2. **Uses IPublishEndpoint.Publish() for events**
-///    - Publish() sends to all subscribers (fan-out)
-///    - Send() sends to specific endpoint (point-to-point)
-///    - EventSyncedEvent should notify all interested services
+/// 2. **Uses context.Publish() for status events**
+///    - Preserves CorrelationId from incoming command
+///    - Maintains message chain for tracing
+///    - Web consumer receives events and pushes to SignalR
 ///
-/// 3. **Command status tracking**
-///    - Creates status record immediately (Pending)
-///    - Updates to Running before actual work
-///    - Completes with result data on success
-///    - Fails with error message on exception
+/// 3. **Event-driven status tracking**
+///    - Publishes CommandStartedEvent immediately
+///    - Publishes CommandProgressUpdatedEvent during work
+///    - Publishes CommandCompletedEvent or CommandFailedEvent at end
 ///
 /// TRIGGERED BY:
 /// =============
@@ -50,26 +49,23 @@ namespace PulpMXFantasy.Application.Consumers;
 public class SyncNextEventCommandConsumer : IConsumer<SyncNextEventCommand>
 {
     private readonly IEventSyncService _eventSyncService;
-    private readonly ICommandStatusService _commandStatusService;
-    private readonly IPublishEndpoint _publishEndpoint;
     private readonly ILogger<SyncNextEventCommandConsumer> _logger;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
 
     /// <summary>
     /// Creates a new SyncNextEventCommandConsumer instance.
     /// </summary>
     /// <param name="eventSyncService">Service for syncing events from API</param>
-    /// <param name="commandStatusService">Service for tracking command status</param>
-    /// <param name="publishEndpoint">MassTransit publish endpoint for events</param>
     /// <param name="logger">Logger instance</param>
     public SyncNextEventCommandConsumer(
         IEventSyncService eventSyncService,
-        ICommandStatusService commandStatusService,
-        IPublishEndpoint publishEndpoint,
         ILogger<SyncNextEventCommandConsumer> logger)
     {
         _eventSyncService = eventSyncService ?? throw new ArgumentNullException(nameof(eventSyncService));
-        _commandStatusService = commandStatusService ?? throw new ArgumentNullException(nameof(commandStatusService));
-        _publishEndpoint = publishEndpoint ?? throw new ArgumentNullException(nameof(publishEndpoint));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -81,29 +77,28 @@ public class SyncNextEventCommandConsumer : IConsumer<SyncNextEventCommand>
     {
         var command = context.Message;
         var commandId = context.MessageId ?? Guid.NewGuid();
-        var correlationId = context.CorrelationId ?? Guid.NewGuid();
         var cancellationToken = context.CancellationToken;
 
         _logger.LogInformation(
             "Processing SyncNextEventCommand: CommandId={CommandId}, CorrelationId={CorrelationId}",
             commandId,
-            correlationId);
+            context.CorrelationId);
 
-        // Create command status record (Pending)
-        await _commandStatusService.CreateAsync(
+        // Publish CommandStartedEvent
+        await context.Publish(new CommandStartedEvent(
             commandId,
-            correlationId,
             "SyncNextEvent",
-            cancellationToken);
+            DateTimeOffset.UtcNow), cancellationToken);
 
         try
         {
-            // Update to Running
-            await _commandStatusService.UpdateProgressAsync(
+            // Publish progress update
+            await context.Publish(new CommandProgressUpdatedEvent(
                 commandId,
                 "Syncing next event from PulpMX API...",
                 10,
-                cancellationToken);
+                DateTimeOffset.UtcNow,
+                "FetchingAPI"), cancellationToken);
 
             // Execute the sync
             var syncResult = await _eventSyncService.SyncNextEventAsync(cancellationToken);
@@ -124,14 +119,15 @@ public class SyncNextEventCommandConsumer : IConsumer<SyncNextEventCommand>
                     EventDate: DateTimeOffset.UtcNow, // Would come from sync result
                     RiderCount: 0); // Would come from sync result
 
-                await _publishEndpoint.Publish(eventSyncedEvent, cancellationToken);
+                await context.Publish(eventSyncedEvent, cancellationToken);
 
-                // Complete with success result
-                await _commandStatusService.CompleteAsync(
+                // Publish CommandCompletedEvent
+                var resultData = new { Synced = true, Message = "Next event synced successfully" };
+                await context.Publish(new CommandCompletedEvent(
                     commandId,
-                    new { Synced = true, Message = "Next event synced successfully" },
+                    DateTimeOffset.UtcNow,
                     "Event synced successfully",
-                    cancellationToken);
+                    JsonSerializer.Serialize(resultData, JsonOptions)), cancellationToken);
             }
             else
             {
@@ -139,12 +135,13 @@ public class SyncNextEventCommandConsumer : IConsumer<SyncNextEventCommand>
                     "No event to sync or API unavailable: CommandId={CommandId}",
                     commandId);
 
-                // Complete but with indication that nothing was synced
-                await _commandStatusService.CompleteAsync(
+                // Publish CommandCompletedEvent with indication that nothing was synced
+                var resultData = new { Synced = false, Message = "No upcoming event found or API unavailable" };
+                await context.Publish(new CommandCompletedEvent(
                     commandId,
-                    new { Synced = false, Message = "No upcoming event found or API unavailable" },
+                    DateTimeOffset.UtcNow,
                     "No upcoming event found",
-                    cancellationToken);
+                    JsonSerializer.Serialize(resultData, JsonOptions)), cancellationToken);
             }
         }
         catch (Exception ex)
@@ -155,11 +152,12 @@ public class SyncNextEventCommandConsumer : IConsumer<SyncNextEventCommand>
                 commandId,
                 ex.Message);
 
-            // Mark as failed - do NOT rethrow to prevent MassTransit retry
-            await _commandStatusService.FailAsync(
+            // Publish CommandFailedEvent - do NOT rethrow to prevent MassTransit retry
+            await context.Publish(new CommandFailedEvent(
                 commandId,
+                DateTimeOffset.UtcNow,
                 ex.Message,
-                cancellationToken);
+                ex.GetType().Name), cancellationToken);
         }
     }
 }

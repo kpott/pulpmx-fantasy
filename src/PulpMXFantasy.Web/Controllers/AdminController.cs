@@ -261,6 +261,48 @@ public class AdminController : Controller
     }
 
     /// <summary>
+    /// Get command details with full progress history for slide-out panel.
+    /// </summary>
+    /// <remarks>
+    /// Returns JSON with status and timeline of progress updates.
+    /// Used by Admin UI when clicking on a command row.
+    /// </remarks>
+    [HttpGet]
+    public async Task<IActionResult> GetCommandDetails(Guid commandId)
+    {
+        var result = await _commandStatusService.GetByIdWithHistoryAsync(commandId);
+
+        if (result == null)
+        {
+            return NotFound();
+        }
+
+        var (status, history) = result.Value;
+
+        return Json(new
+        {
+            status.CommandId,
+            status.CommandType,
+            status.Status,
+            status.ProgressMessage,
+            status.ProgressPercentage,
+            status.StartedAt,
+            status.CompletedAt,
+            status.DurationMs,
+            status.ErrorMessage,
+            status.ResultData,
+            History = history.Select(h => new
+            {
+                h.Id,
+                h.Message,
+                h.ProgressPercentage,
+                h.OccurredAt,
+                h.MilestoneName
+            })
+        });
+    }
+
+    /// <summary>
     /// Gets event slugs for a given season.
     /// </summary>
     /// <remarks>

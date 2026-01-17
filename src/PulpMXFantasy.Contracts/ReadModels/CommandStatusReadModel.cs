@@ -19,4 +19,5 @@ public record CommandStatusReadModel
     public DateTimeOffset? CompletedAt { get; init; }
     public string? ErrorMessage { get; init; }
     public string? ResultData { get; init; }
+    public long? DurationMs { get; init; }
 }

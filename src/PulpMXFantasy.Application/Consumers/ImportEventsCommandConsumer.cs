@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using PulpMXFantasy.Application.Interfaces;
 using PulpMXFantasy.Contracts.Commands;
 using PulpMXFantasy.Contracts.Events;
-using PulpMXFantasy.Contracts.Interfaces;
+using System.Text.Json;
 
 namespace PulpMXFantasy.Application.Consumers;
 
@@ -30,18 +30,23 @@ namespace PulpMXFantasy.Application.Consumers;
 /// For each successful sync, publishes EventSyncedEvent.
 /// Downstream consumers (e.g., ML training) can react to new data.
 ///
-/// PROGRESS TRACKING:
-/// ==================
-/// Updates ICommandStatusService with percentage progress:
-/// - After each event: (completed / total) * 100
-/// - Shows which event is currently being processed
+/// PROGRESS TRACKING (EVENT-DRIVEN):
+/// =================================
+/// Publishes status events via ConsumeContext:
+/// - CommandStartedEvent at start
+/// - CommandProgressUpdatedEvent after each event
+/// - CommandCompletedEvent or CommandFailedEvent at end
+/// Web consumer receives these and pushes to SignalR.
 /// </remarks>
 public class ImportEventsCommandConsumer : IConsumer<ImportEventsCommand>
 {
     private readonly IEventSyncService _eventSyncService;
-    private readonly ICommandStatusService _commandStatusService;
-    private readonly IPublishEndpoint _publishEndpoint;
     private readonly ILogger<ImportEventsCommandConsumer> _logger;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
 
     /// <summary>
     /// Command type identifier for status tracking.
@@ -50,13 +55,9 @@ public class ImportEventsCommandConsumer : IConsumer<ImportEventsCommand>
 
     public ImportEventsCommandConsumer(
         IEventSyncService eventSyncService,
-        ICommandStatusService commandStatusService,
-        IPublishEndpoint publishEndpoint,
         ILogger<ImportEventsCommandConsumer> logger)
     {
         _eventSyncService = eventSyncService ?? throw new ArgumentNullException(nameof(eventSyncService));
-        _commandStatusService = commandStatusService ?? throw new ArgumentNullException(nameof(commandStatusService));
-        _publishEndpoint = publishEndpoint ?? throw new ArgumentNullException(nameof(publishEndpoint));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -66,14 +67,13 @@ public class ImportEventsCommandConsumer : IConsumer<ImportEventsCommand>
     public async Task Consume(ConsumeContext<ImportEventsCommand> context)
     {
         var command = context.Message;
-        var correlationId = context.CorrelationId ?? Guid.NewGuid();
-        var commandId = Guid.NewGuid();
+        var commandId = context.MessageId ?? Guid.NewGuid();
         var cancellationToken = context.CancellationToken;
 
         _logger.LogInformation(
             "Starting ImportEventsCommand: {SlugCount} events to import, CorrelationId={CorrelationId}",
             command.EventSlugs.Count,
-            correlationId);
+            context.CorrelationId);
 
         // Validate input
         if (command.EventSlugs == null || command.EventSlugs.Count == 0)
@@ -82,111 +82,135 @@ public class ImportEventsCommandConsumer : IConsumer<ImportEventsCommand>
             return;
         }
 
-        // Create command status record
-        await _commandStatusService.CreateAsync(
+        // Publish CommandStartedEvent
+        await context.Publish(new CommandStartedEvent(
             commandId,
-            correlationId,
             CommandType,
-            cancellationToken);
+            DateTimeOffset.UtcNow), cancellationToken);
 
         var successCount = 0;
         var failedSlugs = new List<string>();
         var totalCount = command.EventSlugs.Count;
 
-        // Process each event sequentially
-        for (var i = 0; i < totalCount; i++)
+        try
         {
-            var slug = command.EventSlugs[i];
-            var eventNumber = i + 1;
-
-            try
+            // Process each event sequentially
+            for (var i = 0; i < totalCount; i++)
             {
-                _logger.LogInformation(
-                    "Processing event {EventNumber}/{TotalCount}: {EventSlug}",
-                    eventNumber,
-                    totalCount,
-                    slug);
+                var slug = command.EventSlugs[i];
+                var eventNumber = i + 1;
 
-                // Update progress before processing
-                await _commandStatusService.UpdateProgressAsync(
-                    commandId,
-                    $"Syncing event {eventNumber}/{totalCount}: {slug}",
-                    CalculateProgressPercentage(i, totalCount),
-                    cancellationToken);
-
-                // Sync the event
-                var success = await _eventSyncService.SyncHistoricalEventAsync(slug, cancellationToken);
-
-                if (success)
+                try
                 {
-                    successCount++;
-
-                    // Publish event for downstream consumers
-                    await _publishEndpoint.Publish(
-                        new EventSyncedEvent(
-                            EventId: Guid.NewGuid(),
-                            EventName: slug, // Will be replaced with actual name from sync
-                            EventSlug: slug,
-                            EventDate: DateTimeOffset.UtcNow, // Will be replaced with actual date
-                            RiderCount: 0), // Will be replaced with actual count
-                        cancellationToken);
-
                     _logger.LogInformation(
-                        "Successfully synced event {EventSlug} ({EventNumber}/{TotalCount})",
-                        slug,
+                        "Processing event {EventNumber}/{TotalCount}: {EventSlug}",
                         eventNumber,
-                        totalCount);
+                        totalCount,
+                        slug);
+
+                    // Publish progress update before processing
+                    await context.Publish(new CommandProgressUpdatedEvent(
+                        commandId,
+                        $"Syncing event {eventNumber}/{totalCount}: {slug}",
+                        CalculateProgressPercentage(i, totalCount),
+                        DateTimeOffset.UtcNow,
+                        $"Processing_{slug}"), cancellationToken);
+
+                    // Sync the event
+                    var success = await _eventSyncService.SyncHistoricalEventAsync(slug, cancellationToken);
+
+                    if (success)
+                    {
+                        successCount++;
+
+                        // Publish event for downstream consumers
+                        await context.Publish(
+                            new EventSyncedEvent(
+                                EventId: Guid.NewGuid(),
+                                EventName: slug, // Will be replaced with actual name from sync
+                                EventSlug: slug,
+                                EventDate: DateTimeOffset.UtcNow, // Will be replaced with actual date
+                                RiderCount: 0), // Will be replaced with actual count
+                            cancellationToken);
+
+                        _logger.LogInformation(
+                            "Successfully synced event {EventSlug} ({EventNumber}/{TotalCount})",
+                            slug,
+                            eventNumber,
+                            totalCount);
+                    }
+                    else
+                    {
+                        failedSlugs.Add(slug);
+                        _logger.LogWarning(
+                            "Failed to sync event {EventSlug} ({EventNumber}/{TotalCount})",
+                            slug,
+                            eventNumber,
+                            totalCount);
+                    }
+
+                    // Publish progress update after processing
+                    await context.Publish(new CommandProgressUpdatedEvent(
+                        commandId,
+                        $"Completed {eventNumber}/{totalCount}: {slug}",
+                        CalculateProgressPercentage(eventNumber, totalCount),
+                        DateTimeOffset.UtcNow,
+                        $"Completed_{slug}"), cancellationToken);
                 }
-                else
+                catch (Exception ex)
                 {
                     failedSlugs.Add(slug);
-                    _logger.LogWarning(
-                        "Failed to sync event {EventSlug} ({EventNumber}/{TotalCount})",
+                    _logger.LogError(
+                        ex,
+                        "Error syncing event {EventSlug} ({EventNumber}/{TotalCount}): {ErrorMessage}",
                         slug,
                         eventNumber,
-                        totalCount);
+                        totalCount,
+                        ex.Message);
+
+                    // Continue with next event - don't let one failure stop the batch
                 }
-
-                // Update progress after processing
-                await _commandStatusService.UpdateProgressAsync(
-                    commandId,
-                    $"Completed {eventNumber}/{totalCount}: {slug}",
-                    CalculateProgressPercentage(eventNumber, totalCount),
-                    cancellationToken);
             }
-            catch (Exception ex)
+
+            // Publish CommandCompletedEvent with results
+            var resultData = new
             {
-                failedSlugs.Add(slug);
-                _logger.LogError(
-                    ex,
-                    "Error syncing event {EventSlug} ({EventNumber}/{TotalCount}): {ErrorMessage}",
-                    slug,
-                    eventNumber,
-                    totalCount,
-                    ex.Message);
+                TotalRequested = totalCount,
+                SuccessCount = successCount,
+                FailedCount = failedSlugs.Count,
+                FailedSlugs = failedSlugs
+            };
 
-                // Continue with next event - don't let one failure stop the batch
-            }
+            var completionMessage = $"Imported {successCount}/{totalCount} events" +
+                (failedSlugs.Count > 0 ? $" ({failedSlugs.Count} failed)" : "");
+
+            await context.Publish(new CommandCompletedEvent(
+                commandId,
+                DateTimeOffset.UtcNow,
+                completionMessage,
+                JsonSerializer.Serialize(resultData, JsonOptions)), cancellationToken);
+
+            _logger.LogInformation(
+                "ImportEventsCommand completed: {SuccessCount}/{TotalCount} succeeded, {FailedCount} failed",
+                successCount,
+                totalCount,
+                failedSlugs.Count);
         }
-
-        // Complete the command with results
-        var resultData = new
+        catch (Exception ex)
         {
-            TotalRequested = totalCount,
-            SuccessCount = successCount,
-            FailedCount = failedSlugs.Count,
-            FailedSlugs = failedSlugs
-        };
+            _logger.LogError(
+                ex,
+                "Error processing ImportEventsCommand: CommandId={CommandId}, Error={Error}",
+                commandId,
+                ex.Message);
 
-        var completionMessage = $"Imported {successCount}/{totalCount} events" +
-            (failedSlugs.Count > 0 ? $" ({failedSlugs.Count} failed)" : "");
-        await _commandStatusService.CompleteAsync(commandId, resultData, completionMessage, cancellationToken);
-
-        _logger.LogInformation(
-            "ImportEventsCommand completed: {SuccessCount}/{TotalCount} succeeded, {FailedCount} failed",
-            successCount,
-            totalCount,
-            failedSlugs.Count);
+            // Publish CommandFailedEvent - do NOT rethrow to prevent MassTransit retry
+            await context.Publish(new CommandFailedEvent(
+                commandId,
+                DateTimeOffset.UtcNow,
+                ex.Message,
+                ex.GetType().Name), cancellationToken);
+        }
     }
 
     /// <summary>

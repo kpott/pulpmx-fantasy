@@ -3,40 +3,41 @@ using PulpMXFantasy.Contracts.ReadModels;
 namespace PulpMXFantasy.Contracts.Interfaces;
 
 /// <summary>
-/// Service for managing command status in the read model database.
+/// Read-only service for querying command status from the read model database.
 /// </summary>
 /// <remarks>
-/// CQRS PATTERN:
-/// =============
-/// Commands are fire-and-forget (async). This interface provides
-/// status tracking so UI can poll for completion.
+/// EVENT-DRIVEN ARCHITECTURE:
+/// ==========================
+/// Command status is now managed through events:
+/// - Worker consumers publish CommandStartedEvent, CommandProgressUpdatedEvent,
+///   CommandCompletedEvent, and CommandFailedEvent via ConsumeContext.Publish()
+/// - Web's CommandStatusEventConsumer handles these events, writes to DB, and pushes to SignalR
 ///
-/// COMMAND LIFECYCLE:
-/// ==================
-/// 1. CreateAsync - Command starts, status = "Pending"
-/// 2. UpdateProgressAsync - In progress, status = "Running"
-/// 3. CompleteAsync - Success, status = "Completed"
-/// 4. FailAsync - Error, status = "Failed"
+/// This service is READ-ONLY - it provides queries for:
+/// - Initial page load (get recent commands)
+/// - Command details fetch (get command with history)
+/// - Status polling (fallback when SignalR disconnected)
 ///
 /// IMPLEMENTATIONS:
 /// ================
-/// - CommandStatusService (ReadModel): PostgreSQL-backed status tracking
+/// - CommandStatusService (ReadModel): PostgreSQL-backed status queries
 /// </remarks>
 public interface ICommandStatusService
 {
     /// <summary>
-    /// Creates a new command status record with "Pending" status.
-    /// </summary>
-    Task<CommandStatusReadModel> CreateAsync(
-        Guid commandId,
-        Guid correlationId,
-        string commandType,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// Gets a command status by its ID.
     /// </summary>
     Task<CommandStatusReadModel?> GetByIdAsync(
+        Guid commandId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets a command status with its progress history.
+    /// </summary>
+    /// <param name="commandId">The command ID to query</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Tuple of status and history, or null if not found</returns>
+    Task<(CommandStatusReadModel Status, IReadOnlyList<CommandProgressHistoryReadModel> History)?> GetByIdWithHistoryAsync(
         Guid commandId,
         CancellationToken cancellationToken = default);
 
@@ -53,31 +54,5 @@ public interface ICommandStatusService
     Task<List<CommandStatusReadModel>> GetRecentAsync(
         int count = 20,
         string? commandType = null,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Updates the progress of a running command.
-    /// </summary>
-    Task UpdateProgressAsync(
-        Guid commandId,
-        string progressMessage,
-        int progressPercentage,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Marks a command as completed with optional result data and completion message.
-    /// </summary>
-    Task CompleteAsync(
-        Guid commandId,
-        object? resultData = null,
-        string? completionMessage = null,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Marks a command as failed with an error message.
-    /// </summary>
-    Task FailAsync(
-        Guid commandId,
-        string errorMessage,
         CancellationToken cancellationToken = default);
 }

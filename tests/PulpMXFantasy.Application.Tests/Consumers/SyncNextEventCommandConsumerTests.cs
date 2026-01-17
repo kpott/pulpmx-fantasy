@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using PulpMXFantasy.Application.Consumers;
-using PulpMXFantasy.Contracts.Interfaces;
 using PulpMXFantasy.Application.Interfaces;
 using PulpMXFantasy.Contracts.Commands;
 using PulpMXFantasy.Contracts.Events;
@@ -17,20 +16,19 @@ namespace PulpMXFantasy.Application.Tests.Consumers;
 /// WHAT THIS TESTS:
 /// ================
 /// 1. Handler calls EventSyncService.SyncNextEventAsync()
-/// 2. Handler updates command status to Running, then Completed
+/// 2. Handler publishes CommandStartedEvent, CommandProgressUpdatedEvent
 /// 3. Handler publishes EventSyncedEvent on success
-/// 4. Error handling updates status to Failed
+/// 4. Handler publishes CommandCompletedEvent or CommandFailedEvent
 ///
-/// TDD APPROACH:
-/// =============
-/// These tests were written BEFORE the handler implementation.
-/// Each test defines the expected behavior that the handler must implement.
+/// EVENT-DRIVEN ARCHITECTURE:
+/// ==========================
+/// The consumer publishes events via context.Publish() instead of calling
+/// ICommandStatusService directly. This allows the Web project's consumer
+/// to handle status updates and push to SignalR.
 /// </remarks>
 public class SyncNextEventCommandConsumerTests
 {
     private readonly IEventSyncService _eventSyncService;
-    private readonly ICommandStatusService _commandStatusService;
-    private readonly IPublishEndpoint _publishEndpoint;
     private readonly ILogger<SyncNextEventCommandConsumer> _logger;
     private readonly ConsumeContext<SyncNextEventCommand> _consumeContext;
     private readonly SyncNextEventCommandConsumer _handler;
@@ -39,16 +37,12 @@ public class SyncNextEventCommandConsumerTests
     {
         // Create mocks using interfaces
         _eventSyncService = Substitute.For<IEventSyncService>();
-        _commandStatusService = Substitute.For<ICommandStatusService>();
-        _publishEndpoint = Substitute.For<IPublishEndpoint>();
         _logger = Substitute.For<ILogger<SyncNextEventCommandConsumer>>();
         _consumeContext = Substitute.For<ConsumeContext<SyncNextEventCommand>>();
 
         // Create handler under test
         _handler = new SyncNextEventCommandConsumer(
             _eventSyncService,
-            _commandStatusService,
-            _publishEndpoint,
             _logger);
     }
 
@@ -72,7 +66,7 @@ public class SyncNextEventCommandConsumerTests
     }
 
     [Fact]
-    public async Task Consume_UpdatesStatusToRunningThenCompleted()
+    public async Task Consume_PublishesCommandStartedEvent()
     {
         // Arrange
         var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
@@ -89,26 +83,32 @@ public class SyncNextEventCommandConsumerTests
         // Act
         await _handler.Consume(_consumeContext);
 
-        // Assert - Verify status lifecycle
-        // 1. First, command status should be created (Pending)
-        await _commandStatusService.Received(1).CreateAsync(
-            Arg.Any<Guid>(),
-            Arg.Any<Guid>(),
-            "SyncNextEvent",
+        // Assert - CommandStartedEvent should be published
+        await _consumeContext.Received(1).Publish(
+            Arg.Is<CommandStartedEvent>(e =>
+                e.CommandId == messageId &&
+                e.CommandType == "SyncNextEvent"),
             Arg.Any<CancellationToken>());
+    }
 
-        // 2. Then, status should be updated to Running
-        await _commandStatusService.Received(1).UpdateProgressAsync(
-            Arg.Any<Guid>(),
-            Arg.Any<string>(),
-            Arg.Any<int>(),
-            Arg.Any<CancellationToken>());
+    [Fact]
+    public async Task Consume_PublishesProgressUpdateEvent()
+    {
+        // Arrange
+        var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
+        _consumeContext.Message.Returns(command);
+        _consumeContext.MessageId.Returns(Guid.NewGuid());
+        _consumeContext.CorrelationId.Returns(Guid.NewGuid());
 
-        // 3. Finally, status should be marked Completed
-        await _commandStatusService.Received(1).CompleteAsync(
-            Arg.Any<Guid>(),
-            Arg.Any<object?>(),
-            Arg.Any<string?>(),
+        _eventSyncService.SyncNextEventAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act
+        await _handler.Consume(_consumeContext);
+
+        // Assert - CommandProgressUpdatedEvent should be published
+        await _consumeContext.Received().Publish(
+            Arg.Any<CommandProgressUpdatedEvent>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -128,13 +128,35 @@ public class SyncNextEventCommandConsumerTests
         await _handler.Consume(_consumeContext);
 
         // Assert - EventSyncedEvent should be published
-        await _publishEndpoint.Received(1).Publish(
+        await _consumeContext.Received(1).Publish(
             Arg.Any<EventSyncedEvent>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task Consume_DoesNotPublishEventWhenSyncReturnsFalse()
+    public async Task Consume_PublishesCommandCompletedEventOnSuccess()
+    {
+        // Arrange
+        var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
+        var messageId = Guid.NewGuid();
+        _consumeContext.Message.Returns(command);
+        _consumeContext.MessageId.Returns(messageId);
+        _consumeContext.CorrelationId.Returns(Guid.NewGuid());
+
+        _eventSyncService.SyncNextEventAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        // Act
+        await _handler.Consume(_consumeContext);
+
+        // Assert - CommandCompletedEvent should be published
+        await _consumeContext.Received(1).Publish(
+            Arg.Is<CommandCompletedEvent>(e => e.CommandId == messageId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Consume_DoesNotPublishEventSyncedWhenSyncReturnsFalse()
     {
         // Arrange
         var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
@@ -150,20 +172,18 @@ public class SyncNextEventCommandConsumerTests
         await _handler.Consume(_consumeContext);
 
         // Assert - No EventSyncedEvent should be published
-        await _publishEndpoint.DidNotReceive().Publish(
+        await _consumeContext.DidNotReceive().Publish(
             Arg.Any<EventSyncedEvent>(),
             Arg.Any<CancellationToken>());
 
-        // But status should still be completed (just no event synced)
-        await _commandStatusService.Received(1).CompleteAsync(
-            Arg.Any<Guid>(),
-            Arg.Any<object?>(),
-            Arg.Any<string?>(),
+        // But CommandCompletedEvent should still be published
+        await _consumeContext.Received(1).Publish(
+            Arg.Any<CommandCompletedEvent>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task Consume_UpdatesStatusToFailedOnException()
+    public async Task Consume_PublishesCommandFailedEventOnException()
     {
         // Arrange
         var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
@@ -179,18 +199,18 @@ public class SyncNextEventCommandConsumerTests
             .ThrowsAsync(expectedException);
 
         // Act & Assert - Handler should NOT rethrow (to prevent retry storm)
-        // but should mark status as Failed
         await _handler.Consume(_consumeContext);
 
-        // Verify status was marked as Failed
-        await _commandStatusService.Received(1).FailAsync(
-            Arg.Any<Guid>(),
-            Arg.Is<string>(msg => msg.Contains("Test error during sync")),
+        // Verify CommandFailedEvent was published
+        await _consumeContext.Received(1).Publish(
+            Arg.Is<CommandFailedEvent>(e =>
+                e.CommandId == messageId &&
+                e.ErrorMessage.Contains("Test error during sync")),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task Consume_DoesNotPublishEventOnError()
+    public async Task Consume_DoesNotPublishEventSyncedOnError()
     {
         // Arrange
         var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
@@ -204,35 +224,9 @@ public class SyncNextEventCommandConsumerTests
         // Act
         await _handler.Consume(_consumeContext);
 
-        // Assert - No event should be published
-        await _publishEndpoint.DidNotReceive().Publish(
+        // Assert - No EventSyncedEvent should be published
+        await _consumeContext.DidNotReceive().Publish(
             Arg.Any<EventSyncedEvent>(),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task Consume_UsesCorrelationIdFromContext()
-    {
-        // Arrange
-        var command = new SyncNextEventCommand(DateTimeOffset.UtcNow);
-        var messageId = Guid.NewGuid();
-        var correlationId = Guid.NewGuid();
-
-        _consumeContext.Message.Returns(command);
-        _consumeContext.MessageId.Returns(messageId);
-        _consumeContext.CorrelationId.Returns(correlationId);
-
-        _eventSyncService.SyncNextEventAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(true));
-
-        // Act
-        await _handler.Consume(_consumeContext);
-
-        // Assert - CorrelationId should be passed to status service
-        await _commandStatusService.Received(1).CreateAsync(
-            Arg.Any<Guid>(),
-            correlationId,  // Should use the correlation ID from context
-            Arg.Any<string>(),
             Arg.Any<CancellationToken>());
     }
 }

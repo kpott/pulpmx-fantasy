@@ -4,10 +4,10 @@ using Microsoft.Extensions.Logging;
 using PulpMXFantasy.Application.Interfaces;
 using PulpMXFantasy.Contracts.Commands;
 using PulpMXFantasy.Contracts.Events;
-using PulpMXFantasy.Contracts.Interfaces;
 using PulpMXFantasy.Contracts.ReadModels;
 using PulpMXFantasy.Domain.Abstractions;
 using PulpMXFantasy.Domain.Enums;
+using System.Text.Json;
 
 namespace PulpMXFantasy.Application.Consumers;
 
@@ -19,7 +19,7 @@ namespace PulpMXFantasy.Application.Consumers;
 /// ========================
 /// Encapsulates the entire ML training workflow as a single command:
 /// 1. Syncs next event from API (ensures latest data)
-/// 2. Creates command status for UI polling
+/// 2. Publishes status events for real-time UI updates via SignalR
 /// 3. Trains 4 models sequentially (250/450 x Qualification/FinishPosition)
 /// 4. Persists ModelMetadata to read model for each trained model
 /// 5. Publishes ModelsTrainedEvent on completion (triggers prediction regeneration)
@@ -32,10 +32,10 @@ namespace PulpMXFantasy.Application.Consumers;
 /// 3. 450cc Qualification (binary classification)
 /// 4. 450cc FinishPosition (regression)
 ///
-/// PROGRESS TRACKING:
-/// ==================
+/// PROGRESS TRACKING (EVENT-DRIVEN):
+/// =================================
 /// This is the longest-running command (60-300 seconds).
-/// Progress is updated after each step:
+/// Publishes CommandProgressUpdatedEvent after each step:
 /// - 0%: Syncing next event
 /// - 10%: Training 250cc Qualification
 /// - 30%: Training 250cc FinishPosition
@@ -45,7 +45,7 @@ namespace PulpMXFantasy.Application.Consumers;
 ///
 /// ERROR HANDLING:
 /// ===============
-/// If any model training fails, the command is marked as Failed.
+/// If any model training fails, publishes CommandFailedEvent.
 /// Partial training results are NOT published - all 4 models must succeed.
 ///
 /// USAGE:
@@ -59,12 +59,15 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
 {
     private readonly IEventSyncService _eventSyncService;
     private readonly IModelTrainer _modelTrainer;
-    private readonly ICommandStatusService _commandStatusService;
     private readonly IReadModelUpdater _readModelUpdater;
-    private readonly IPublishEndpoint _publishEndpoint;
     private readonly IRiderPredictor _riderPredictor;
     private readonly ILogger<TrainModelsCommandConsumer> _logger;
     private readonly string _modelDirectory;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
 
     /// <summary>
     /// Creates a new TrainModelsCommandConsumer instance.
@@ -72,18 +75,14 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
     public TrainModelsCommandConsumer(
         IEventSyncService eventSyncService,
         IModelTrainer modelTrainer,
-        ICommandStatusService commandStatusService,
         IReadModelUpdater readModelUpdater,
-        IPublishEndpoint publishEndpoint,
         IRiderPredictor riderPredictor,
         ILogger<TrainModelsCommandConsumer> logger,
         IConfiguration? configuration = null)
     {
         _eventSyncService = eventSyncService ?? throw new ArgumentNullException(nameof(eventSyncService));
         _modelTrainer = modelTrainer ?? throw new ArgumentNullException(nameof(modelTrainer));
-        _commandStatusService = commandStatusService ?? throw new ArgumentNullException(nameof(commandStatusService));
         _readModelUpdater = readModelUpdater ?? throw new ArgumentNullException(nameof(readModelUpdater));
-        _publishEndpoint = publishEndpoint ?? throw new ArgumentNullException(nameof(publishEndpoint));
         _riderPredictor = riderPredictor ?? throw new ArgumentNullException(nameof(riderPredictor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _modelDirectory = configuration?["MLNet:ModelDirectory"] ?? "./TrainedModels";
@@ -96,29 +95,28 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
     public async Task Consume(ConsumeContext<TrainModelsCommand> context)
     {
         var command = context.Message;
-        var correlationId = context.CorrelationId ?? Guid.NewGuid();
         var commandId = context.MessageId ?? Guid.NewGuid();
         var cancellationToken = context.CancellationToken;
 
         _logger.LogInformation(
             "Starting TrainModelsCommand: CommandId={CommandId}, CorrelationId={CorrelationId}, Force={Force}",
-            commandId, correlationId, command.Force);
+            commandId, context.CorrelationId, command.Force);
 
-        // Create command status for UI polling
-        await _commandStatusService.CreateAsync(
+        // Publish CommandStartedEvent
+        await context.Publish(new CommandStartedEvent(
             commandId,
-            correlationId,
             "TrainModels",
-            cancellationToken);
+            DateTimeOffset.UtcNow), cancellationToken);
 
         try
         {
             // Step 0: Sync next event first to ensure we have latest data
-            await _commandStatusService.UpdateProgressAsync(
+            await context.Publish(new CommandProgressUpdatedEvent(
                 commandId,
                 "Syncing next event from API...",
                 0,
-                cancellationToken);
+                DateTimeOffset.UtcNow,
+                "SyncEvent"), cancellationToken);
 
             var synced = await _eventSyncService.SyncNextEventAsync(cancellationToken);
             _logger.LogInformation("Event sync completed: Synced={Synced}", synced);
@@ -127,11 +125,12 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
 
             // Train all 4 models sequentially
             // 1. 250cc Qualification (10%)
-            await _commandStatusService.UpdateProgressAsync(
+            await context.Publish(new CommandProgressUpdatedEvent(
                 commandId,
                 "Training 250cc Qualification model...",
                 10,
-                cancellationToken);
+                DateTimeOffset.UtcNow,
+                "Train250Qual"), cancellationToken);
 
             var class250Qual = await _modelTrainer.TrainQualificationModelAsync(
                 BikeClass.Class250,
@@ -141,11 +140,12 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
             await PersistModelMetadataAsync(class250Qual, cancellationToken);
 
             // 2. 250cc FinishPosition (30%)
-            await _commandStatusService.UpdateProgressAsync(
+            await context.Publish(new CommandProgressUpdatedEvent(
                 commandId,
                 "Training 250cc FinishPosition model...",
                 30,
-                cancellationToken);
+                DateTimeOffset.UtcNow,
+                "Train250Finish"), cancellationToken);
 
             var class250Finish = await _modelTrainer.TrainFinishPositionModelAsync(
                 BikeClass.Class250,
@@ -155,11 +155,12 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
             await PersistModelMetadataAsync(class250Finish, cancellationToken);
 
             // 3. 450cc Qualification (55%)
-            await _commandStatusService.UpdateProgressAsync(
+            await context.Publish(new CommandProgressUpdatedEvent(
                 commandId,
                 "Training 450cc Qualification model...",
                 55,
-                cancellationToken);
+                DateTimeOffset.UtcNow,
+                "Train450Qual"), cancellationToken);
 
             var class450Qual = await _modelTrainer.TrainQualificationModelAsync(
                 BikeClass.Class450,
@@ -169,11 +170,12 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
             await PersistModelMetadataAsync(class450Qual, cancellationToken);
 
             // 4. 450cc FinishPosition (80%)
-            await _commandStatusService.UpdateProgressAsync(
+            await context.Publish(new CommandProgressUpdatedEvent(
                 commandId,
                 "Training 450cc FinishPosition model...",
                 80,
-                cancellationToken);
+                DateTimeOffset.UtcNow,
+                "Train450Finish"), cancellationToken);
 
             var class450Finish = await _modelTrainer.TrainFinishPositionModelAsync(
                 BikeClass.Class450,
@@ -191,7 +193,7 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
             _riderPredictor.ReloadModels();
             _logger.LogInformation("Models reloaded successfully");
 
-            // Publish ModelsTrainedEvent
+            // Publish ModelsTrainedEvent (domain event for downstream workflows)
             var modelsTrainedEvent = new ModelsTrainedEvent(
                 TrainedAt: DateTimeOffset.UtcNow,
                 Models: trainedModels.Select(m => new ModelMetadata(
@@ -205,13 +207,13 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
                 )).ToList(),
                 TotalTrainingSamples: totalSamples);
 
-            await _publishEndpoint.Publish(modelsTrainedEvent, cancellationToken);
+            await context.Publish(modelsTrainedEvent, cancellationToken);
 
             _logger.LogInformation(
                 "Published ModelsTrainedEvent: Models={ModelCount}, TotalSamples={TotalSamples}",
                 trainedModels.Count, totalSamples);
 
-            // Complete command status
+            // Publish CommandCompletedEvent
             var resultData = new
             {
                 ModelsCount = trainedModels.Count,
@@ -228,7 +230,11 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
             };
 
             var completionMessage = $"Trained {trainedModels.Count} models ({totalSamples:N0} samples)";
-            await _commandStatusService.CompleteAsync(commandId, resultData, completionMessage, cancellationToken);
+            await context.Publish(new CommandCompletedEvent(
+                commandId,
+                DateTimeOffset.UtcNow,
+                completionMessage,
+                JsonSerializer.Serialize(resultData, JsonOptions)), cancellationToken);
 
             _logger.LogInformation(
                 "TrainModelsCommand completed successfully: CommandId={CommandId}, ModelsCount={ModelsCount}",
@@ -240,10 +246,12 @@ public class TrainModelsCommandConsumer : IConsumer<TrainModelsCommand>
                 "TrainModelsCommand failed: CommandId={CommandId}, Error={Error}",
                 commandId, ex.Message);
 
-            await _commandStatusService.FailAsync(
+            // Publish CommandFailedEvent - do NOT rethrow to prevent MassTransit retry
+            await context.Publish(new CommandFailedEvent(
                 commandId,
+                DateTimeOffset.UtcNow,
                 $"Model training failed: {ex.Message}",
-                cancellationToken);
+                ex.GetType().Name), cancellationToken);
         }
     }
 

@@ -856,3 +856,94 @@ main {
     transform: translateY(-2px);
     box-shadow: var(--shadow-lg);
 }
+
+/* ========================================
+   Timeline
+   ======================================== */
+.timeline {
+    position: relative;
+    padding: 0;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.timeline-item {
+    position: relative;
+    padding-left: 24px;
+    padding-bottom: var(--space-md);
+    border-left: 2px solid var(--color-border-light);
+    margin-left: 6px;
+}
+
+.timeline-item:last-child {
+    padding-bottom: 0;
+    border-left-color: transparent;
+}
+
+.timeline-marker {
+    position: absolute;
+    left: -7px;
+    top: 3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    border: 2px solid var(--color-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.timeline-content {
+    background: var(--color-bg);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm) var(--space-md);
+}
+
+.timeline-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-xs);
+}
+
+.timeline-message {
+    font-size: 0.875rem;
+    color: var(--color-text-primary);
+    line-height: 1.4;
+}
+
+.timeline-progress {
+    margin-top: var(--space-xs);
+}
+
+/* Clickable rows */
+.command-row {
+    transition: background-color var(--transition-fast);
+}
+
+.command-row:hover {
+    background-color: var(--color-accent-light) !important;
+}
+
+/* Progress bars in table */
+.progress {
+    background-color: var(--color-border-light);
+    border-radius: var(--radius-sm);
+}
+
+.progress-bar {
+    background-color: var(--color-accent);
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: width 0.3s ease;
+}
+
+/* Offcanvas customization */
+.offcanvas {
+    width: 400px !important;
+}
+
+@media (max-width: 576px) {
+    .offcanvas {
+        width: 100% !important;
+    }
+}

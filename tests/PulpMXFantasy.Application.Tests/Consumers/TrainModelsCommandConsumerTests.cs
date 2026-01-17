@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using PulpMXFantasy.Application.Consumers;
-using PulpMXFantasy.Contracts.Interfaces;
 using PulpMXFantasy.Application.Interfaces;
 using PulpMXFantasy.Contracts.Commands;
 using PulpMXFantasy.Contracts.Events;
@@ -17,21 +16,26 @@ namespace PulpMXFantasy.Application.Tests.Consumers;
 /// Unit tests for TrainModelsCommandConsumer following TDD methodology.
 /// </summary>
 /// <remarks>
-/// Tests verify:
+/// WHAT THIS TESTS:
+/// ================
 /// 1. Handler trains all 4 models (250/450 x Qualification/FinishPosition)
-/// 2. Handler updates command status between each model training
+/// 2. Handler publishes CommandProgressUpdatedEvent between each model training
 /// 3. Handler persists ModelMetadata to read model
 /// 4. Handler publishes ModelsTrainedEvent with all metrics
-/// 5. Error during training updates status to Failed
+/// 5. Error during training publishes CommandFailedEvent
 /// 6. Force flag retrains even if recent models exist
+///
+/// EVENT-DRIVEN ARCHITECTURE:
+/// ==========================
+/// The consumer publishes events via context.Publish() instead of calling
+/// ICommandStatusService directly. This allows the Web project's consumer
+/// to handle status updates and push to SignalR.
 /// </remarks>
 public class TrainModelsCommandConsumerTests
 {
     private readonly IEventSyncService _mockEventSyncService;
     private readonly IModelTrainer _mockModelTrainer;
-    private readonly ICommandStatusService _mockCommandStatusService;
     private readonly IReadModelUpdater _mockReadModelUpdater;
-    private readonly IPublishEndpoint _mockPublishEndpoint;
     private readonly IRiderPredictor _mockRiderPredictor;
     private readonly ILogger<TrainModelsCommandConsumer> _mockLogger;
     private readonly ConsumeContext<TrainModelsCommand> _mockConsumeContext;
@@ -40,9 +44,7 @@ public class TrainModelsCommandConsumerTests
     {
         _mockEventSyncService = Substitute.For<IEventSyncService>();
         _mockModelTrainer = Substitute.For<IModelTrainer>();
-        _mockCommandStatusService = Substitute.For<ICommandStatusService>();
         _mockReadModelUpdater = Substitute.For<IReadModelUpdater>();
-        _mockPublishEndpoint = Substitute.For<IPublishEndpoint>();
         _mockRiderPredictor = Substitute.For<IRiderPredictor>();
         _mockLogger = Substitute.For<ILogger<TrainModelsCommandConsumer>>();
         _mockConsumeContext = Substitute.For<ConsumeContext<TrainModelsCommand>>();
@@ -55,9 +57,7 @@ public class TrainModelsCommandConsumerTests
         new TrainModelsCommandConsumer(
             _mockEventSyncService,
             _mockModelTrainer,
-            _mockCommandStatusService,
             _mockReadModelUpdater,
-            _mockPublishEndpoint,
             _mockRiderPredictor,
             _mockLogger);
 
@@ -72,6 +72,7 @@ public class TrainModelsCommandConsumerTests
         var correlationId = Guid.NewGuid();
 
         _mockConsumeContext.Message.Returns(command);
+        _mockConsumeContext.MessageId.Returns(Guid.NewGuid());
         _mockConsumeContext.CorrelationId.Returns(correlationId);
 
         SetupSuccessfulModelTraining();
@@ -104,11 +105,10 @@ public class TrainModelsCommandConsumerTests
     }
 
     /// <summary>
-    /// Test: Handler updates status between each model training step.
-    /// Progress: 0% (sync), 10% (250 qual), 30% (250 finish), 55% (450 qual), 80% (450 finish), 100% (complete)
+    /// Test: Handler publishes CommandStartedEvent at the start
     /// </summary>
     [Fact]
-    public async Task Consume_UpdatesProgressBetweenEachModelTraining()
+    public async Task Consume_PublishesCommandStartedEvent_AtStart()
     {
         // Arrange
         var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
@@ -126,37 +126,53 @@ public class TrainModelsCommandConsumerTests
         // Act
         await handler.Consume(_mockConsumeContext);
 
+        // Assert
+        await _mockConsumeContext.Received(1).Publish(
+            Arg.Is<CommandStartedEvent>(e =>
+                e.CommandId == commandId &&
+                e.CommandType == "TrainModels"),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Test: Handler publishes progress events between each model training step.
+    /// Progress: 0% (sync), 10% (250 qual), 30% (250 finish), 55% (450 qual), 80% (450 finish)
+    /// </summary>
+    [Fact]
+    public async Task Consume_PublishesProgressEventsBetweenEachModelTraining()
+    {
+        // Arrange
+        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+        var correlationId = Guid.NewGuid();
+        var commandId = Guid.NewGuid();
+
+        _mockConsumeContext.Message.Returns(command);
+        _mockConsumeContext.CorrelationId.Returns(correlationId);
+        _mockConsumeContext.MessageId.Returns(commandId);
+
+        SetupSuccessfulModelTraining();
+
+        var progressEvents = new List<CommandProgressUpdatedEvent>();
+        _mockConsumeContext.Publish(
+            Arg.Do<CommandProgressUpdatedEvent>(e => progressEvents.Add(e)),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var handler = CreateHandler();
+
+        // Act
+        await handler.Consume(_mockConsumeContext);
+
         // Assert - Verify progress updates were made at 0% (sync), 10%, 30%, 55%, 80%
-        // The final 100% is set via CompleteAsync
-        await _mockCommandStatusService.Received(1).UpdateProgressAsync(
-            Arg.Any<Guid>(),
-            Arg.Is<string>(s => s.Contains("Syncing")),
-            0,
+        await _mockConsumeContext.Received().Publish(
+            Arg.Any<CommandProgressUpdatedEvent>(),
             Arg.Any<CancellationToken>());
 
-        await _mockCommandStatusService.Received(1).UpdateProgressAsync(
-            Arg.Any<Guid>(),
-            Arg.Is<string>(s => s.Contains("250") && s.Contains("Qualification")),
-            10,
-            Arg.Any<CancellationToken>());
-
-        await _mockCommandStatusService.Received(1).UpdateProgressAsync(
-            Arg.Any<Guid>(),
-            Arg.Is<string>(s => s.Contains("250") && s.Contains("Finish")),
-            30,
-            Arg.Any<CancellationToken>());
-
-        await _mockCommandStatusService.Received(1).UpdateProgressAsync(
-            Arg.Any<Guid>(),
-            Arg.Is<string>(s => s.Contains("450") && s.Contains("Qualification")),
-            55,
-            Arg.Any<CancellationToken>());
-
-        await _mockCommandStatusService.Received(1).UpdateProgressAsync(
-            Arg.Any<Guid>(),
-            Arg.Is<string>(s => s.Contains("450") && s.Contains("Finish")),
-            80,
-            Arg.Any<CancellationToken>());
+        Assert.Contains(progressEvents, p => p.ProgressPercentage == 0 && p.ProgressMessage.Contains("Syncing"));
+        Assert.Contains(progressEvents, p => p.ProgressPercentage == 10 && p.ProgressMessage.Contains("250") && p.ProgressMessage.Contains("Qualification"));
+        Assert.Contains(progressEvents, p => p.ProgressPercentage == 30 && p.ProgressMessage.Contains("250") && p.ProgressMessage.Contains("Finish"));
+        Assert.Contains(progressEvents, p => p.ProgressPercentage == 55 && p.ProgressMessage.Contains("450") && p.ProgressMessage.Contains("Qualification"));
+        Assert.Contains(progressEvents, p => p.ProgressPercentage == 80 && p.ProgressMessage.Contains("450") && p.ProgressMessage.Contains("Finish"));
     }
 
     /// <summary>
@@ -170,6 +186,7 @@ public class TrainModelsCommandConsumerTests
         var correlationId = Guid.NewGuid();
 
         _mockConsumeContext.Message.Returns(command);
+        _mockConsumeContext.MessageId.Returns(Guid.NewGuid());
         _mockConsumeContext.CorrelationId.Returns(correlationId);
 
         SetupSuccessfulModelTraining();
@@ -196,6 +213,7 @@ public class TrainModelsCommandConsumerTests
         var correlationId = Guid.NewGuid();
 
         _mockConsumeContext.Message.Returns(command);
+        _mockConsumeContext.MessageId.Returns(Guid.NewGuid());
         _mockConsumeContext.CorrelationId.Returns(correlationId);
 
         SetupSuccessfulModelTraining();
@@ -205,8 +223,8 @@ public class TrainModelsCommandConsumerTests
         // Act
         await handler.Consume(_mockConsumeContext);
 
-        // Assert
-        await _mockPublishEndpoint.Received(1).Publish(
+        // Assert - ModelsTrainedEvent published via context
+        await _mockConsumeContext.Received(1).Publish(
             Arg.Is<ModelsTrainedEvent>(e =>
                 e.Models.Count == 4 &&
                 e.TotalTrainingSamples > 0),
@@ -214,10 +232,10 @@ public class TrainModelsCommandConsumerTests
     }
 
     /// <summary>
-    /// Test: Error during training updates status to Failed
+    /// Test: Error during training publishes CommandFailedEvent
     /// </summary>
     [Fact]
-    public async Task Consume_UpdatesStatusToFailed_WhenTrainingThrowsException()
+    public async Task Consume_PublishesCommandFailedEvent_WhenTrainingThrowsException()
     {
         // Arrange
         var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
@@ -240,10 +258,11 @@ public class TrainModelsCommandConsumerTests
         // Act
         await handler.Consume(_mockConsumeContext);
 
-        // Assert
-        await _mockCommandStatusService.Received(1).FailAsync(
-            Arg.Any<Guid>(),
-            Arg.Is<string>(s => s.Contains(errorMessage)),
+        // Assert - CommandFailedEvent published
+        await _mockConsumeContext.Received(1).Publish(
+            Arg.Is<CommandFailedEvent>(e =>
+                e.CommandId == commandId &&
+                e.ErrorMessage.Contains(errorMessage)),
             Arg.Any<CancellationToken>());
     }
 
@@ -258,6 +277,7 @@ public class TrainModelsCommandConsumerTests
         var correlationId = Guid.NewGuid();
 
         _mockConsumeContext.Message.Returns(command);
+        _mockConsumeContext.MessageId.Returns(Guid.NewGuid());
         _mockConsumeContext.CorrelationId.Returns(correlationId);
 
         SetupSuccessfulModelTraining();
@@ -279,10 +299,10 @@ public class TrainModelsCommandConsumerTests
     }
 
     /// <summary>
-    /// Test: Command status is created at the start
+    /// Test: Handler publishes CommandCompletedEvent on success
     /// </summary>
     [Fact]
-    public async Task Consume_CreatesCommandStatus_AtStart()
+    public async Task Consume_PublishesCommandCompletedEvent_OnSuccess()
     {
         // Arrange
         var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
@@ -290,35 +310,7 @@ public class TrainModelsCommandConsumerTests
         var commandId = Guid.NewGuid();
 
         _mockConsumeContext.Message.Returns(command);
-        _mockConsumeContext.CorrelationId.Returns(correlationId);
         _mockConsumeContext.MessageId.Returns(commandId);
-
-        SetupSuccessfulModelTraining();
-
-        var handler = CreateHandler();
-
-        // Act
-        await handler.Consume(_mockConsumeContext);
-
-        // Assert
-        await _mockCommandStatusService.Received(1).CreateAsync(
-            Arg.Any<Guid>(),
-            correlationId,
-            "TrainModels",
-            Arg.Any<CancellationToken>());
-    }
-
-    /// <summary>
-    /// Test: Command status is completed on success
-    /// </summary>
-    [Fact]
-    public async Task Consume_CompletesCommandStatus_OnSuccess()
-    {
-        // Arrange
-        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
-        var correlationId = Guid.NewGuid();
-
-        _mockConsumeContext.Message.Returns(command);
         _mockConsumeContext.CorrelationId.Returns(correlationId);
 
         SetupSuccessfulModelTraining();
@@ -329,10 +321,8 @@ public class TrainModelsCommandConsumerTests
         await handler.Consume(_mockConsumeContext);
 
         // Assert
-        await _mockCommandStatusService.Received(1).CompleteAsync(
-            Arg.Any<Guid>(),
-            Arg.Any<object>(),
-            Arg.Any<string?>(),
+        await _mockConsumeContext.Received(1).Publish(
+            Arg.Is<CommandCompletedEvent>(e => e.CommandId == commandId),
             Arg.Any<CancellationToken>());
     }
 
@@ -348,6 +338,7 @@ public class TrainModelsCommandConsumerTests
         var trainingOrder = new List<string>();
 
         _mockConsumeContext.Message.Returns(command);
+        _mockConsumeContext.MessageId.Returns(Guid.NewGuid());
         _mockConsumeContext.CorrelationId.Returns(correlationId);
 
         _mockModelTrainer.TrainQualificationModelAsync(
@@ -397,11 +388,12 @@ public class TrainModelsCommandConsumerTests
         ModelsTrainedEvent? publishedEvent = null;
 
         _mockConsumeContext.Message.Returns(command);
+        _mockConsumeContext.MessageId.Returns(Guid.NewGuid());
         _mockConsumeContext.CorrelationId.Returns(correlationId);
 
         SetupSuccessfulModelTraining();
 
-        _mockPublishEndpoint.Publish(
+        _mockConsumeContext.Publish(
             Arg.Do<ModelsTrainedEvent>(e => publishedEvent = e),
             Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
@@ -422,6 +414,30 @@ public class TrainModelsCommandConsumerTests
         Assert.Contains(publishedEvent.Models, m => m.BikeClass == "Class250" && m.ModelType == "FinishPosition");
         Assert.Contains(publishedEvent.Models, m => m.BikeClass == "Class450" && m.ModelType == "Qualification");
         Assert.Contains(publishedEvent.Models, m => m.BikeClass == "Class450" && m.ModelType == "FinishPosition");
+    }
+
+    /// <summary>
+    /// Test: Handler reloads models in predictor after training
+    /// </summary>
+    [Fact]
+    public async Task Consume_ReloadsModelsInPredictor_AfterTraining()
+    {
+        // Arrange
+        var command = new TrainModelsCommand(DateTimeOffset.UtcNow);
+
+        _mockConsumeContext.Message.Returns(command);
+        _mockConsumeContext.MessageId.Returns(Guid.NewGuid());
+        _mockConsumeContext.CorrelationId.Returns(Guid.NewGuid());
+
+        SetupSuccessfulModelTraining();
+
+        var handler = CreateHandler();
+
+        // Act
+        await handler.Consume(_mockConsumeContext);
+
+        // Assert - Verify ReloadModels was called
+        _mockRiderPredictor.Received(1).ReloadModels();
     }
 
     private void SetupSuccessfulModelTraining()

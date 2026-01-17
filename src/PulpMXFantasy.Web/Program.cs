@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using PulpMXFantasy.Messaging;
 using PulpMXFantasy.ReadModel;
+using PulpMXFantasy.Web.Consumers;
+using PulpMXFantasy.Web.Hubs;
 using Serilog;
 
 // ============================================================================
@@ -44,6 +46,9 @@ try
 // Add MVC controllers with views
 builder.Services.AddControllersWithViews();
 
+// Add SignalR for real-time updates
+builder.Services.AddSignalR();
+
 // ============================================================================
 // READ MODEL DATABASE (CQRS - READ SIDE)
 // ============================================================================
@@ -53,12 +58,16 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddReadModel(builder.Configuration);
 
 // ============================================================================
-// MASSTRANSIT (CQRS - SEND ONLY)
+// MASSTRANSIT (CQRS - SEND + CONSUME STATUS EVENTS)
 // ============================================================================
-// Configure MassTransit for sending commands to Worker Service.
-// Web UI only sends commands - no consumers registered here.
+// Configure MassTransit for:
+// 1. Sending commands to Worker Service
+// 2. Consuming command status events for real-time UI updates via SignalR
 
-builder.Services.AddMessagingSendOnly(builder.Configuration);
+builder.Services.AddMessagingWithConsumers(builder.Configuration, x =>
+{
+    x.AddConsumer<CommandStatusEventConsumer>();
+});
 
 // ============================================================================
 // HEALTH CHECKS
@@ -132,6 +141,9 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}")
     .WithStaticAssets();
+
+// Map SignalR hub for real-time admin notifications
+app.MapHub<AdminHub>("/hubs/admin");
 
     // ============================================================================
     // HEALTH CHECK ENDPOINTS

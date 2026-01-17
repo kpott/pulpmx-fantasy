@@ -53,6 +53,9 @@ public class CommandStatusConfiguration : IEntityTypeConfiguration<CommandStatus
             .HasColumnName("result_data")
             .HasColumnType("jsonb");
 
+        builder.Property(c => c.DurationMs)
+            .HasColumnName("duration_ms");
+
         // Indexes
         builder.HasIndex(c => c.CorrelationId)
             .HasDatabaseName("idx_command_status_correlation");
