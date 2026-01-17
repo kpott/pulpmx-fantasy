@@ -54,17 +54,18 @@ public class AdminController : Controller
         var recentStatuses = await _commandStatusService.GetRecentAsync(10);
         ViewBag.RecentStatuses = recentStatuses;
 
-        // Check if predictions are locked for the next event
-        // Include events that have started but aren't completed yet
+        // Check if predictions are locked for the next upcoming event
+        // Only consider future events (past events shouldn't block training)
+        var now = DateTimeOffset.UtcNow;
         var nextEvent = await _readDbContext.Events
             .AsNoTracking()
-            .Where(e => !e.IsCompleted)
+            .Where(e => !e.IsCompleted && e.EventDate >= now.Date)
             .OrderBy(e => e.EventDate)
             .FirstOrDefaultAsync();
 
         ViewBag.NextEvent = nextEvent;
         ViewBag.IsPredictionsLocked = nextEvent?.LockoutTime.HasValue == true
-            && nextEvent.LockoutTime.Value <= DateTimeOffset.UtcNow;
+            && nextEvent.LockoutTime.Value <= now;
 
         return View();
     }
