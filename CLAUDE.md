@@ -1,5 +1,31 @@
 # Project Guidelines for Claude
 
+## About This Application
+
+PulpMX Fantasy is a **decision-support tool for supercross/motocross fantasy sports players**. It helps players optimize their team selections in the PulpMX Fantasy game by providing machine learning-powered predictions of rider performance and calculating optimal team compositions that maximize expected fantasy points.
+
+### Key Features
+
+- **Fantasy Point Predictions**: ML pipeline predicting rider qualification probability, finish position, and expected fantasy points per event
+- **Optimal Team Generation**: Algorithmic optimizer selecting the best 8-rider roster while enforcing constraints (4 riders per class, All-Star restrictions, consecutive pick rules)
+- **Event Data Sync**: Fetches live event data from PulpMX Fantasy API including rider handicaps and qualifying results
+- **Historical Import & Model Training**: Imports past race results and trains separate ML models for Supercross and Motocross series
+- **Real-time Updates**: SignalR-powered command status and progress tracking
+
+### Target Users
+
+Competitive fantasy players who want data-driven team selections. The app addresses pain points like analyzing 80+ riders per event, complex scoring rules with handicaps, and tracking consecutive pick restrictions.
+
+### Tech Stack
+
+- ASP.NET Core Web + Worker Service
+- PostgreSQL with dual-schema CQRS (public + read_model)
+- MassTransit + RabbitMQ for async messaging
+- ML.NET for predictions
+- SignalR for real-time updates
+
+---
+
 ## Development Practices
 
 ### Test-Driven Development (TDD)
